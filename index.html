@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>加油记账</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="banner" class="banner" hidden></div>
+
+  <header class="topbar">
+    <h1>加油记账</h1>
+    <div class="topbar-actions">
+      <button id="export-btn" type="button">导出</button>
+      <button id="import-btn" type="button">导入</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel entry">
+      <h2>记一笔</h2>
+      <form id="entry-form" novalidate>
+        <div class="entry-row">
+          <label class="field">
+            <span>日期</span>
+            <input id="entry-date" type="date" required>
+          </label>
+          <label class="field">
+            <span>金额</span>
+            <input id="entry-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="320.50">
+          </label>
+          <label class="field field-note">
+            <span>备注</span>
+            <input id="entry-note" type="text" maxlength="40" autocomplete="off" placeholder="可选">
+          </label>
+        </div>
+        <div class="entry-actions">
+          <p id="entry-error" class="error" hidden></p>
+          <button type="submit" class="primary">记下</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="cards">
+      <article class="card">
+        <h2>本月</h2>
+        <p class="card-amount" id="month-total">¥0.00</p>
+        <p class="card-meta" id="month-meta">0 次</p>
+      </article>
+      <article class="card">
+        <h2>本年</h2>
+        <p class="card-amount" id="year-total">¥0.00</p>
+        <p class="card-meta" id="year-meta">0 次</p>
+      </article>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="chart-head">
+        <h2>每月金额</h2>
+        <label class="field field-year">
+          <span>年份</span>
+          <select id="year-select"></select>
+        </label>
+      </div>
+      <div id="chart" class="chart" role="group" aria-label="各月加油金额"></div>
+    </section>
+
+    <section class="panel detail-panel">
+      <h2 id="detail-title">明细</h2>
+      <ul id="record-list" class="record-list"></ul>
+      <p id="detail-empty" class="empty" hidden>还没有记录，在上面记第一笔。</p>
+    </section>
+  </main>
+
+  <input id="import-file" type="file" accept="application/json,.json" hidden>
+
+  <script type="module" src="./src/ui.js"></script>
+</body>
+</html>

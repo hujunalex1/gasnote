@@ -1,0 +1,109 @@
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --line: #e3e3df;
+  --text: #1c1c1a;
+  --text-dim: #6b6b66;
+  --accent: #2f8f5e;
+  --danger: #a33a2a;
+  --warn-bg: #fdf3d8;
+  --warn-line: #e0c877;
+  --error: #a33a2a;
+  --radius: 6px;
+
+  /* 柱色。单序列，经 dataviz 校验器四项全过（亮度带 / 彩度下限 / 对白底对比 ≥3:1）。
+     选中态是「状态」不是「第二个类别」，故另取更暗的一档，
+     并额外用加粗的月份标签做非颜色冗余。 */
+  --bar: #2f8f5e;
+  --bar-selected: #1a5c3e;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 16px 64px;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+h1 { font-size: 20px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; color: var(--text-dim); letter-spacing: .02em; }
+
+.layout { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.topbar {
+  max-width: 720px; margin: 0 auto; padding: 20px 0 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.topbar-actions { display: flex; gap: 8px; }
+
+button {
+  font: inherit; padding: 7px 14px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer;
+}
+button:hover { border-color: var(--text-dim); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.08); }
+
+.banner {
+  max-width: 720px; margin: 12px auto 0; padding: 12px 14px;
+  border-radius: var(--radius); border: 1px solid var(--warn-line);
+  background: var(--warn-bg); font-size: 14px;
+}
+.banner[data-kind="corrupt-version"], .banner[data-kind="corrupt-format"] {
+  border-color: var(--danger); background: #fbeae7;
+}
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+
+.entry-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-dim); }
+.field input, .field select {
+  font: inherit; padding: 7px 10px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--surface); color: var(--text); min-width: 120px;
+}
+.field-note { flex: 1 1 140px; }
+.entry-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.error { color: var(--error); font-size: 13px; margin: 0; }
+
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.card-amount { font-size: 26px; margin: 0; font-variant-numeric: tabular-nums; }
+.card-meta { margin: 4px 0 0; font-size: 13px; color: var(--text-dim); }
+
+.chart-head { display: flex; align-items: baseline; justify-content: space-between; }
+/* 相邻柱之间留 2px 以上的画布间隙，柱子不互相粘连 */
+.chart { display: flex; align-items: flex-end; gap: 4px; height: 160px; margin-top: 12px; }
+.bar {
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+  background: none; border: 0; padding: 0; cursor: pointer; height: 100%;
+  border-radius: var(--radius);
+}
+/* 数据端 4px 圆角，底部锚定基线 */
+.bar-fill { background: var(--bar); border-radius: 4px 4px 0 0; min-height: 2px; }
+.bar[aria-pressed="true"] .bar-fill { background: var(--bar-selected); }
+/* 文字一律用文本色，不用序列色 */
+.bar-label { font-size: 11px; color: var(--text-dim); text-align: center; margin-top: 4px; }
+.bar[aria-pressed="true"] .bar-label { color: var(--text); font-weight: 600; }
+
+.record-list { list-style: none; margin: 0; padding: 0; }
+.record-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-top: 1px solid var(--line);
+}
+.record-row:first-child { border-top: 0; }
+.record-date { font-variant-numeric: tabular-nums; color: var(--text-dim); width: 56px; }
+.record-amount { font-variant-numeric: tabular-nums; font-weight: 600; }
+.record-note { color: var(--text-dim); font-size: 13px; flex: 1; }
+.record-prompt { color: var(--danger); font-size: 13px; }
+.record-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.record-actions button { padding: 4px 10px; font-size: 13px; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+.empty { color: var(--text-dim); font-size: 14px; margin: 8px 0 0; }
+
+@media (max-width: 560px) {
+  .cards { grid-template-columns: 1fr; }
+  .chart { height: 120px; }
+}
