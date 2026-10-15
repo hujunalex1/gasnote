@@ -16,8 +16,8 @@ export function RecordList({ year, month, records, onDelete }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   return (
-    <section className="rounded-xl bg-card px-5 py-4 ring-1 ring-foreground/10">
-      <h2 className="mb-2.5 text-xs font-semibold tracking-wide text-muted-foreground">
+    <section className="border border-border bg-card px-4 py-3.5">
+      <h2 className="mb-2 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
         {year} 年 {month} 月明细
       </h2>
 
@@ -30,12 +30,12 @@ export function RecordList({ year, month, records, onDelete }: Props) {
             return (
               <li
                 key={record.id}
-                className="flex items-center gap-3.5 border-t border-border py-2.5 first:border-t-0 first:pt-1"
+                className="flex items-center gap-3 border-t border-border py-2 first:border-t-0 first:pt-0.5"
               >
-                <span className="w-12 shrink-0 text-[13px] tabular-nums text-muted-foreground">
+                <span className="w-12 shrink-0 font-mono text-[12px] text-muted-foreground">
                   {record.date.slice(5)}
                 </span>
-                <span className="font-semibold tabular-nums">{formatMoney(record.amount)}</span>
+                <span className="font-mono font-semibold">{formatMoney(record.amount)}</span>
                 {record.note ? (
                   <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
                     {record.note}
@@ -45,7 +45,7 @@ export function RecordList({ year, month, records, onDelete }: Props) {
                 <span className="ml-auto flex items-center gap-1.5">
                   {confirming ? (
                     <>
-                      <span className="text-[13px] text-destructive">确认删除？</span>
+                      <span className="font-mono text-[12px] text-destructive">确认删除？</span>
                       <Button
                         variant="destructive"
                         size="sm"

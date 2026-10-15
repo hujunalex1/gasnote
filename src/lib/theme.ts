@@ -28,8 +28,19 @@ export function systemPrefersDark(): boolean {
 /**
  * shadcn 的深色模式靠 <html> 上的 .dark 类切换（见 index.css 的 @custom-variant）。
  * theme 为 null 表示「跟随系统」。
+ *
+ * 切换的那一帧先挂上 .theme-switching 关掉所有过渡：
+ * 不这样做的话，每个带 transition 的元素（按钮的 transition-all、柱子的
+ * transition-colors）都会把颜色慢慢淡过去，慢的能差 1 秒才跟上。
+ * 主题切换是瞬时状态变更，不该有动画。
  */
 export function applyThemeClass(theme: Theme | null): void {
   const dark = theme ? theme === 'dark' : systemPrefersDark()
-  document.documentElement.classList.toggle('dark', dark)
+  const root = document.documentElement
+
+  root.classList.add('theme-switching')
+  root.classList.toggle('dark', dark)
+  // 读一次布局属性，强制浏览器在移除 .theme-switching 之前先应用这一帧
+  void root.offsetHeight
+  requestAnimationFrame(() => root.classList.remove('theme-switching'))
 }

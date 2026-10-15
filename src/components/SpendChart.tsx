@@ -33,20 +33,22 @@ export function SpendChart({
   const heights = barHeights(summary.months)
 
   return (
-    <section className="rounded-xl bg-card px-5 py-4 ring-1 ring-foreground/10">
+    <section className="border border-border bg-card px-4 py-3.5">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="m-0 text-xs font-semibold tracking-wide text-muted-foreground">每月金额</h2>
+        <h2 className="m-0 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+          每月金额
+        </h2>
         <Select
           items={years.map((y) => ({ value: String(y), label: `${y} 年` }))}
           value={String(year)}
           onValueChange={(v) => onYearChange(Number(v))}
         >
-          <SelectTrigger size="sm" aria-label="选择年份">
+          <SelectTrigger size="sm" aria-label="选择年份" className="font-mono">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
+              <SelectItem key={y} value={String(y)} className="font-mono">
                 {y} 年
               </SelectItem>
             ))}
@@ -69,19 +71,19 @@ export function SpendChart({
               aria-label={`${year} 年 ${m.month} 月，${formatMoney(m.total)}，${m.count} 次`}
               title={`${m.month} 月 ${formatMoney(m.total)} · ${m.count} 次`}
               onClick={() => onMonthSelect(m.month)}
-              className="relative z-1 flex h-full flex-1 cursor-pointer flex-col justify-end rounded-[4px] border-0 bg-transparent p-0 transition-colors hover:bg-muted"
+              className="relative z-1 flex h-full flex-1 cursor-pointer flex-col justify-end rounded-none border-0 bg-transparent p-0 transition-colors hover:bg-muted"
             >
               <div
-                className={cn(
-                  'rounded-t-[4px] transition-colors',
-                  selected ? 'bg-(--bar-selected)' : 'bg-chart-1',
-                )}
+                // 刻意不加 transition-colors：切换深浅色时逐色淡入会让柱子慢一拍
+                // （实测变量 200ms 内就变了，柱子要 1s 才跟上），而且主题切换本该是瞬时的。
+                // 仪表上的指示器是跳变，不是渐隐。
+                className={cn('rounded-none', selected ? 'bg-(--bar-selected)' : 'bg-chart-1')}
                 // 零高柱子保留 2px，表达「这个月没有记录」而不是渲染失败
                 style={{ height: `${heights[i] * 100}%`, minHeight: 2 }}
               />
               <span
                 className={cn(
-                  'absolute inset-x-0 -bottom-5 text-center text-[11px] leading-5 tabular-nums transition-opacity',
+                  'absolute inset-x-0 -bottom-5 text-center font-mono text-[11px] leading-5 transition-opacity',
                   showLabel ? 'opacity-100' : 'opacity-0',
                   selected ? 'font-semibold text-foreground' : 'text-muted-foreground',
                 )}

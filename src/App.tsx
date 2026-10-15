@@ -168,8 +168,8 @@ export function App() {
   return (
     <div className="min-h-dvh bg-background font-sans text-foreground">
       <div className="mx-auto w-full max-w-[660px] px-4 pb-16 sm:px-5">
-        <header className="flex items-center justify-between gap-3 pt-7 pb-5">
-          <h1 className="m-0 text-[17px] font-semibold tracking-tight">加油记账</h1>
+        <header className="flex items-center justify-between gap-3 border-b border-border pt-6 pb-4">
+          <h1 className="m-0 font-mono text-[15px] font-semibold tracking-[0.02em]">加油记账</h1>
           <div className="flex gap-1.5">
             <ThemeToggle isDark={isDark} onToggle={handleToggleTheme} />
             <Button variant="outline" size="sm" onClick={handleExport}>
@@ -181,7 +181,7 @@ export function App() {
           </div>
         </header>
 
-        <main className="flex flex-col gap-5">
+        <main className="flex flex-col gap-3 pt-4">
           <NoticeBanner notice={notice} saveError={saveError} />
           <EntryForm onAdd={handleAdd} />
           <SummaryPanel cards={cards} year={year} />

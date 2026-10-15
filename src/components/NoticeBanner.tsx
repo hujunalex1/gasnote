@@ -31,10 +31,10 @@ export function NoticeBanner({ notice, saveError }: Props) {
     <div
       role="status"
       className={cn(
-        'rounded-lg px-3.5 py-3 text-sm leading-relaxed ring-1',
+        'border px-3.5 py-3 text-sm leading-relaxed',
         severe
-          ? 'bg-destructive/10 text-destructive ring-destructive/30'
-          : 'bg-amber-50 text-amber-900 ring-amber-300/60 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-800/60',
+          ? 'border-destructive/60 bg-destructive/10 text-destructive'
+          : 'border-primary/60 bg-primary/10 text-foreground',
       )}
     >
       {text}
