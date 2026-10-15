@@ -42,7 +42,7 @@ function renderBanner() {
   el.hidden = false;
   el.dataset.kind = notice.kind;
   if (notice.kind === 'storage-unavailable') {
-    el.textContent = '浏览器不允许保存数据（可能是无痕模式）。本次记录只在当前页面有效，刷新即丢 —— 请点「导出」保存。';
+    el.textContent = '浏览器不允许保存数据（可能是无痕模式）。本次记录只在当前页面有效，刷新即丢。请点「导出」保存。';
   } else if (notice.kind === 'corrupt-version') {
     el.textContent = `检测到本工具更新版本写入的数据，当前版本读不懂。原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。注意：点「导出」导出的是当前列表，不包含这份副本。`;
   } else {
@@ -360,6 +360,56 @@ function initImportExport() {
   $('import-file').addEventListener('change', handleImportFile);
 }
 
+// ---------- 主题 ----------
+// 没有手动选择时（applyTheme(null)）交给 CSS 的 prefers-color-scheme，
+// 这里只负责把按钮文案同步成"当前模式下点一下会切到哪边"。
+const THEME_KEY = 'gasnote.theme';
+const prefersDark = () => globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches === true;
+
+function readSavedTheme() {
+  try {
+    const saved = storage.getItem(THEME_KEY);
+    return saved === 'light' || saved === 'dark' ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function applyTheme(theme) {
+  if (theme) {
+    document.documentElement.dataset.theme = theme;
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+
+  const isDark = theme ? theme === 'dark' : prefersDark();
+  const toggle = $('theme-toggle');
+  toggle.textContent = isDark ? '浅色' : '深色';
+  toggle.setAttribute('aria-label', isDark ? '切换到浅色模式' : '切换到深色模式');
+}
+
+function initTheme() {
+  applyTheme(readSavedTheme());
+
+  $('theme-toggle').addEventListener('click', () => {
+    const saved = readSavedTheme();
+    const isDark = saved ? saved === 'dark' : prefersDark();
+    const next = isDark ? 'light' : 'dark';
+    try {
+      storage.setItem(THEME_KEY, next);
+    } catch {
+      /* 内存模式下存不住，本次会话内仍可用 */
+    }
+    applyTheme(next);
+  });
+
+  // 用户没手动选过时，跟随系统实时切换
+  globalThis.matchMedia?.('(prefers-color-scheme: dark)')
+    .addEventListener?.('change', () => {
+      if (!readSavedTheme()) applyTheme(null);
+    });
+}
+
 function init() {
   const loaded = load(storage);
   state.records = loaded.records;
@@ -370,6 +420,7 @@ function init() {
   $('entry-form').addEventListener('submit', handleSubmit);
   $('year-select').addEventListener('change', onYearChange);
 
+  initTheme();
   initImportExport();
   renderAll();
 }

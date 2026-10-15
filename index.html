@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>加油记账</title>
   <link rel="stylesheet" href="./styles.css">
+  <script>
+    // 在样式表应用前就把手动选择的主题挂上去，避免深色用户看到白屏闪一下。
+    // 没有手动选择时什么都不做，交给 CSS 的 prefers-color-scheme 处理。
+    try {
+      var savedTheme = localStorage.getItem('gasnote.theme');
+      if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+    } catch (e) { /* 隐私模式下读不到就算了 */ }
+  </script>
 </head>
 <body>
   <div id="banner" class="banner" hidden></div>
@@ -12,6 +20,7 @@
   <header class="topbar">
     <h1>加油记账</h1>
     <div class="topbar-actions">
+      <button id="theme-toggle" type="button" aria-label="切换到深色模式">深色</button>
       <button id="export-btn" type="button">导出</button>
       <button id="import-btn" type="button">导入</button>
     </div>
@@ -42,17 +51,17 @@
       </form>
     </section>
 
-    <section class="cards">
-      <article class="card">
+    <section class="summary">
+      <div class="hero-stat">
         <h2>本月</h2>
-        <p class="card-amount" id="month-total">¥0.00</p>
-        <p class="card-meta" id="month-meta">0 次</p>
-      </article>
-      <article class="card">
+        <p class="hero-number" id="month-total">¥0.00</p>
+        <p class="stat-meta" id="month-meta">0 次</p>
+      </div>
+      <div class="sub-stat">
         <h2 id="year-card-title">本年</h2>
-        <p class="card-amount" id="year-total">¥0.00</p>
-        <p class="card-meta" id="year-meta">0 次</p>
-      </article>
+        <p class="sub-number" id="year-total">¥0.00</p>
+        <p class="stat-meta" id="year-meta">0 次</p>
+      </div>
     </section>
 
     <section class="panel chart-panel">
