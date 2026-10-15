@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights, summaryCards } from '../src/stats.js';
+import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights, summaryCards } from '../src/lib/stats.ts';
 
 const rec = (date, amount, id = date + amount) => ({ id, date, amount, note: '' });
 

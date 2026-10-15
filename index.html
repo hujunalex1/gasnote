@@ -1,89 +1,23 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>加油记账</title>
-  <link rel="stylesheet" href="./styles.css">
-  <script>
-    // 在样式表应用前就把手动选择的主题挂上去，避免深色用户看到白屏闪一下。
-    // 没有手动选择时什么都不做，交给 CSS 的 prefers-color-scheme 处理。
-    try {
-      var savedTheme = localStorage.getItem('gasnote.theme');
-      if (savedTheme) document.documentElement.dataset.theme = savedTheme;
-    } catch (e) { /* 隐私模式下读不到就算了 */ }
-  </script>
-</head>
-<body>
-  <div id="banner" class="banner" hidden></div>
-
-  <header class="topbar">
-    <h1>加油记账</h1>
-    <div class="topbar-actions">
-      <button id="theme-toggle" type="button" aria-label="切换到深色模式">深色</button>
-      <button id="export-btn" type="button">导出</button>
-      <button id="import-btn" type="button">导入</button>
-    </div>
-  </header>
-
-  <main class="layout">
-    <section class="panel entry">
-      <h2>记一笔</h2>
-      <form id="entry-form" novalidate>
-        <div class="entry-row">
-          <label class="field">
-            <span>日期</span>
-            <input id="entry-date" type="date" required>
-          </label>
-          <label class="field">
-            <span>金额</span>
-            <input id="entry-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="320.50">
-          </label>
-          <label class="field field-note">
-            <span>备注</span>
-            <input id="entry-note" type="text" maxlength="40" autocomplete="off" placeholder="可选">
-          </label>
-        </div>
-        <div class="entry-actions">
-          <p id="entry-error" class="error" hidden></p>
-          <button type="submit" class="primary">记下</button>
-        </div>
-      </form>
-    </section>
-
-    <section class="summary">
-      <div class="hero-stat">
-        <h2>本月</h2>
-        <p class="hero-number" id="month-total">¥0.00</p>
-        <p class="stat-meta" id="month-meta">0 次</p>
-      </div>
-      <div class="sub-stat">
-        <h2 id="year-card-title">本年</h2>
-        <p class="sub-number" id="year-total">¥0.00</p>
-        <p class="stat-meta" id="year-meta">0 次</p>
-      </div>
-    </section>
-
-    <section class="panel chart-panel">
-      <div class="chart-head">
-        <h2>每月金额</h2>
-        <label class="field field-year">
-          <span>年份</span>
-          <select id="year-select"></select>
-        </label>
-      </div>
-      <div id="chart" class="chart" role="group" aria-label="各月加油金额"></div>
-    </section>
-
-    <section class="panel detail-panel">
-      <h2 id="detail-title">明细</h2>
-      <ul id="record-list" class="record-list"></ul>
-      <p id="detail-empty" class="empty" hidden>还没有记录，在上面记第一笔。</p>
-    </section>
-  </main>
-
-  <input id="import-file" type="file" accept="application/json,.json" hidden>
-
-  <script type="module" src="./src/ui.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>加油记账</title>
+    <script>
+      // 在样式表应用前挂上 .dark，避免手动选了深色的用户看到白屏闪一下。
+      // 没有手动选择时什么都不做，交给 CSS 的 prefers-color-scheme 处理。
+      try {
+        var saved = localStorage.getItem("gasnote.theme")
+        if (saved === "dark") document.documentElement.classList.add("dark")
+        else if (saved === "light") document.documentElement.classList.remove("dark")
+        else if (matchMedia("(prefers-color-scheme: dark)").matches)
+          document.documentElement.classList.add("dark")
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

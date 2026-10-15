@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeRecords, parseImport, serialize, newId, newIdFallback, SCHEMA_VERSION,
   decodeStored, probeStorage, load, save, STORAGE_KEY, CORRUPT_KEY,
-} from '../src/store.js';
+} from '../src/lib/store.ts';
 
 const good = (over = {}) => ({ id: 'a1', date: '2026-10-15', amount: 320.5, note: '', ...over });
 

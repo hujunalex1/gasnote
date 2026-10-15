@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    // shadcn 的 CLI 只读根 tsconfig.json 来解析 "@/" 别名。
+    // 别名只写在 tsconfig.app.json 里的话，CLI 会在项目根建一个字面量的 "@/" 目录。
+    // 不写 baseUrl：TS 6 已弃用，paths 相对本文件解析即可。
+    "paths": { "@/*": ["./src/*"] }
+  }
+}

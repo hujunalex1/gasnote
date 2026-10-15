@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAmountInput, formatMoney, toISODate, todayISO, isValidDate } from '../src/format.js';
+import { parseAmountInput, formatMoney, toISODate, todayISO, isValidDate } from '../src/lib/format.ts';
 
 test('接受整数金额', () => {
   assert.deepEqual(parseAmountInput('320'), { ok: true, amount: 320 });

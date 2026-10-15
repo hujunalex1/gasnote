@@ -1,0 +1,143 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    /* Geist 只有拉丁字形，中文必须显式接到系统 CJK 字体上，
+       否则会落到通用 sans-serif 再被浏览器随便挑一个中文字体。 */
+    --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+        'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* 覆盖 shadcn 默认外观。它的默认 --primary 是近黑 oklch(0.205 0 0)、
+   底色是纯白 —— 正是「又一个 shadcn 站点」的那套观感，不要。
+   下面每个值都过了 WCAG 计算：白字 on --primary = 6.46:1，
+   --muted-foreground on --card ≈ 5.06:1，均达 AA。 */
+:root {
+    --background: #f5f5f3;
+    --foreground: #171715;
+    --card: #fdfdfc;
+    --card-foreground: #171715;
+    --popover: #fdfdfc;
+    --popover-foreground: #171715;
+    --primary: #1f6b46;
+    --primary-foreground: #ffffff;
+    --secondary: #eeeeec;
+    --secondary-foreground: #171715;
+    --muted: #ededeb;
+    --muted-foreground: #6f6f68;
+    --accent: #ededeb;
+    --accent-foreground: #171715;
+    --destructive: #9c3423;
+    --border: #e3e3df;
+    --input: #dcdcd6;
+    --ring: #1f6b46;
+    --chart-1: #2f8f5e;
+    /* 图表里"被选中那根柱子"的色。选中态是状态不是第二个序列，
+       所以同色系另取一档，并额外用加粗的月份标签做非颜色冗余。 */
+    --bar-selected: #1a5c3e;
+    --chart-2: #6f6f68;
+    --chart-3: #a8a8a1;
+    --chart-4: #c9c9c3;
+    --chart-5: #deded9;
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* 深色模式不是把浅色翻转，是从同一组色阶里另取一档、对深色画布重新校验过的。
+   深色下主按钮改成「亮绿底 + 近黑字」（5.93:1），因为白字配亮绿会掉到 3:1 以下。 */
+.dark {
+    --background: #141514;
+    --foreground: #e9ebe9;
+    --card: #1b1d1c;
+    --card-foreground: #e9ebe9;
+    --popover: #1b1d1c;
+    --popover-foreground: #e9ebe9;
+    --primary: #46a674;
+    --primary-foreground: #0d1a13;
+    --secondary: #262927;
+    --secondary-foreground: #e9ebe9;
+    --muted: #262927;
+    --muted-foreground: #8b918d;
+    --accent: #262927;
+    --accent-foreground: #e9ebe9;
+    --destructive: #e88570;
+    --border: #2b2e2c;
+    --input: #3b3f3d;
+    --ring: #46a674;
+    --chart-1: #46a674;
+    --bar-selected: #7bcf9f;
+    --chart-2: #8b918d;
+    --chart-3: #5c615e;
+    --chart-4: #414542;
+    --chart-5: #333634;
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
