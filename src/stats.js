@@ -72,3 +72,32 @@ export function barHeights(months) {
   if (max <= 0) return months.map(() => 0);
   return months.map((m) => m.total / max);
 }
+
+/**
+ * 概览卡要显示的两个数字。
+ *
+ * 本月卡恒定看「真实的当前月」；本年卡**跟随年份选择器**。
+ * 这一点是 spec §7 明确定的：「年份选择器切换 → 概览卡「本年」跟随更新」。
+ * 若本年卡不跟随，用户切到某个年份做同比时，看到的会是另一个年份的总额
+ * ——而同比正是这个选择器存在的全部理由。
+ *
+ * now 作为参数传入，保持本文件是纯函数。
+ */
+export function summaryCards(records, selectedYear, now) {
+  const realMonth = monthlyTotal(
+    records,
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+  );
+
+  const summary = yearlySummary(records, selectedYear);
+  // 平均金额同样走整数「分」，与项目其余部分口径一致
+  const avg = summary.count === 0
+    ? 0
+    : fromCents(Math.round(toCents(summary.total) / summary.count));
+
+  return {
+    month: realMonth,
+    year: { total: summary.total, count: summary.count, avg },
+    isCurrentYear: selectedYear === now.getFullYear(),
+  };
+}

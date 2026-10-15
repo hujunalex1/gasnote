@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights } from '../src/stats.js';
+import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights, summaryCards } from '../src/stats.js';
 
 const rec = (date, amount, id = date + amount) => ({ id, date, amount, note: '' });
 
@@ -133,4 +133,41 @@ test('barHeights：最高月份为 1，其余按比例', () => {
   assert.equal(heights[2], 1);
   assert.equal(heights[0], 0.5);
   assert.equal(heights[1], 0.25);
+});
+
+// spec §7：「年份选择器切换 → 概览卡「本年」跟随更新」
+const NOW = new Date(2026, 9, 15); // 本地时间 2026-10-15
+const CARDS = [rec('2025-03-10', 700), rec('2026-10-15', 400)];
+
+test('summaryCards：本年卡跟随所选年份，而不是恒定显示当前年', () => {
+  const c = summaryCards(CARDS, 2025, NOW);
+  assert.equal(c.year.total, 700);
+  assert.equal(c.year.count, 1);
+});
+
+test('summaryCards：选中当前年时本年卡就是当前年的数', () => {
+  const c = summaryCards(CARDS, 2026, NOW);
+  assert.equal(c.year.total, 400);
+});
+
+test('summaryCards：isCurrentYear 随所选年份变化', () => {
+  assert.equal(summaryCards(CARDS, 2026, NOW).isCurrentYear, true);
+  assert.equal(summaryCards(CARDS, 2025, NOW).isCurrentYear, false);
+});
+
+test('summaryCards：本月卡恒定看真实的当前月，不随所选年份变化', () => {
+  assert.equal(summaryCards(CARDS, 2026, NOW).month.total, 400); // 2026-10
+  assert.equal(summaryCards(CARDS, 2025, NOW).month.total, 400); // 仍是 2026-10
+});
+
+test('summaryCards：无记录时全零，不产生 NaN', () => {
+  const c = summaryCards([], 2026, NOW);
+  assert.deepEqual(c.month, { total: 0, count: 0, avg: 0 });
+  assert.deepEqual(c.year, { total: 0, count: 0, avg: 0 });
+  assert.ok(!Number.isNaN(c.year.avg));
+});
+
+test('summaryCards：本年平均金额走整数分，与项目不变量一致', () => {
+  const records = [rec('2026-01-01', 100), rec('2026-01-02', 100), rec('2026-01-03', 100.01)];
+  assert.equal(summaryCards(records, 2026, new Date(2026, 0, 5)).year.avg, 100);
 });

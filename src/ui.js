@@ -1,6 +1,6 @@
 import { parseAmountInput, formatMoney, isValidDate, todayISO } from './format.js';
-import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights } from './stats.js';
-import { load, save, probeStorage, newId, serialize, parseImport } from './store.js';
+import { monthKey, yearlySummary, allYears, barHeights, summaryCards } from './stats.js';
+import { load, save, probeStorage, newId, serialize, parseImport, CORRUPT_KEY } from './store.js';
 
 // ---- 存储：不可用时降级为内存，功能照常，只是刷新即丢 ----
 function createMemoryStorage() {
@@ -44,20 +44,31 @@ function renderBanner() {
   if (notice.kind === 'storage-unavailable') {
     el.textContent = '浏览器不允许保存数据（可能是无痕模式）。本次记录只在当前页面有效，刷新即丢 —— 请点「导出」保存。';
   } else if (notice.kind === 'corrupt-version') {
-    el.textContent = '检测到本工具更新版本写入的数据，当前版本读不懂，已保留原始副本（导出后可见）。为避免覆盖，列表暂时是空的。';
+    el.textContent = `检测到本工具更新版本写入的数据，当前版本读不懂。原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。注意：点「导出」导出的是当前列表，不包含这份副本。`;
   } else {
-    el.textContent = '本地数据已损坏，无法读取。原始副本已保留，未被覆盖。';
+    el.textContent = `本地数据已损坏，无法读取。原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。注意：点「导出」导出的是当前列表，不包含这份副本。`;
   }
 }
 
+/** 落盘并把结果如实反映到横幅上。返回 save() 的结果供调用方决定怎么措辞。 */
 function persist() {
   const result = save(storage, state.records);
-  if (!result.ok) {
-    const el = $('banner');
-    el.hidden = false;
-    el.dataset.kind = 'save-failed';
-    el.textContent = result.error;
+  const el = $('banner');
+
+  if (result.ok) {
+    // 只撤掉「保存失败」这条自己发的警告，别顺手清掉损坏数据的横幅
+    if (el.dataset.kind === 'save-failed') {
+      el.hidden = true;
+      el.textContent = '';
+      delete el.dataset.kind;
+    }
+    return result;
   }
+
+  el.hidden = false;
+  el.dataset.kind = 'save-failed';
+  el.textContent = result.error;
+  return result;
 }
 
 function showEntryError(message) {
@@ -116,15 +127,16 @@ function currentMonthKey() {
 }
 
 function renderCards() {
-  // 概览卡恒定看「真实的本月 / 本年」，不随年份选择器变化
-  const now = new Date();
-  const thisMonth = monthlyTotal(state.records, `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
-  const thisYear = yearlySummary(state.records, now.getFullYear());
+  // 本月卡恒定看「真实的当前月」；本年卡跟随年份选择器（spec §7）。
+  const cards = summaryCards(state.records, state.year, new Date());
 
-  $('month-total').textContent = formatMoney(thisMonth.total);
-  $('month-meta').textContent = `${thisMonth.count} 次 · 均 ${formatMoney(thisMonth.avg)}`;
-  $('year-total').textContent = formatMoney(thisYear.total);
-  $('year-meta').textContent = `${thisYear.count} 次 · 均 ${formatMoney(thisYear.count === 0 ? 0 : thisYear.total / thisYear.count)}`;
+  $('month-total').textContent = formatMoney(cards.month.total);
+  $('month-meta').textContent = `${cards.month.count} 次 · 均 ${formatMoney(cards.month.avg)}`;
+
+  // 看的是往年时标题还写「本年」会让人误读成今年
+  $('year-card-title').textContent = cards.isCurrentYear ? '本年' : `${state.year} 年`;
+  $('year-total').textContent = formatMoney(cards.year.total);
+  $('year-meta').textContent = `${cards.year.count} 次 · 均 ${formatMoney(cards.year.avg)}`;
 }
 
 function renderYearSelect() {
@@ -333,9 +345,13 @@ async function handleImportFile(event) {
   if (!confirmed) return;
 
   state.records = parsed.records;
-  const result = save(storage, state.records);
+  // 用 persist() 而不是直接 save()：落盘失败必须同时进横幅，不能只闪一个 alert。
+  // 更不能在没落盘的情况下说「已导入成功」——那会让用户以为数据已经安全了。
+  const result = persist();
   renderAll();
-  window.alert(result.ok ? `已导入 ${parsed.records.length} 条记录。` : result.error);
+  window.alert(result.ok
+    ? `已导入 ${parsed.records.length} 条记录。`
+    : `已导入 ${parsed.records.length} 条记录，但保存失败，刷新后会丢失。\n\n${result.error}`);
 }
 
 function initImportExport() {
