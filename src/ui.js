@@ -171,6 +171,7 @@ function renderChart() {
     bar.addEventListener('click', () => {
       state.month = month;
       renderChart();
+      renderDetail();
     });
 
     chart.append(bar);
@@ -183,12 +184,114 @@ function onYearChange(event) {
   renderYearSelect();
   renderChart();
   renderCards();
+  renderDetail();
 }
 
 function renderAll() {
   renderCards();
   renderYearSelect();
   renderChart();
+  renderDetail();
+}
+
+function renderDetail() {
+  const list = $('record-list');
+  const empty = $('detail-empty');
+  list.textContent = '';
+
+  $('detail-title').textContent = `${state.year} 年 ${state.month} 月明细`;
+
+  // 排序：日期降序；同一天内按录入顺序倒序（后录入的在前）。
+  // 带上原始下标是必需的——同一天多条时只比日期会得到 0，
+  // 稳定排序会原样保留插入顺序，也就是「最旧的在最前」，与 spec 相反。
+  const rows = state.records
+    .map((record, index) => ({ record, index }))
+    .filter(({ record }) => monthKey(record.date) === currentMonthKey())
+    .sort((a, b) => {
+      if (a.record.date !== b.record.date) return a.record.date < b.record.date ? 1 : -1;
+      return b.index - a.index;
+    })
+    .map(({ record }) => record);
+
+  if (rows.length === 0) {
+    empty.hidden = false;
+    return;
+  }
+  empty.hidden = true;
+
+  for (const record of rows) {
+    const li = document.createElement('li');
+    li.className = 'record-row';
+
+    const date = document.createElement('span');
+    date.className = 'record-date';
+    date.textContent = record.date.slice(5); // "10-15"
+
+    const amount = document.createElement('span');
+    amount.className = 'record-amount';
+    amount.textContent = formatMoney(record.amount);
+
+    li.append(date, amount);
+
+    if (record.note) {
+      const note = document.createElement('span');
+      note.className = 'record-note';
+      note.textContent = record.note;
+      li.append(note);
+    }
+
+    const actions = document.createElement('span');
+    actions.className = 'record-actions';
+    actions.append(makeDeleteControls(record.id));
+    li.append(actions);
+
+    list.append(li);
+  }
+}
+
+/**
+ * 删除采用行内二次确认，不用原生 confirm()：样式割裂、且容易误触。
+ * 点「删除」后按钮就地变成「确认删除？ [是] [否]」，点「否」原样恢复。
+ */
+function makeDeleteControls(id) {
+  const wrap = document.createElement('span');
+  wrap.className = 'record-actions';
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'danger';
+  del.textContent = '删除';
+
+  del.addEventListener('click', () => {
+    wrap.textContent = '';
+
+    const prompt = document.createElement('span');
+    prompt.className = 'record-prompt';
+    prompt.textContent = '确认删除？';
+
+    const yes = document.createElement('button');
+    yes.type = 'button';
+    yes.className = 'danger';
+    yes.textContent = '是';
+    yes.addEventListener('click', () => {
+      state.records = state.records.filter((r) => r.id !== id);
+      persist();
+      renderAll();
+    });
+
+    const no = document.createElement('button');
+    no.type = 'button';
+    no.textContent = '否';
+    no.addEventListener('click', () => {
+      wrap.textContent = '';
+      wrap.append(del);
+    });
+
+    wrap.append(prompt, yes, no);
+  });
+
+  wrap.append(del);
+  return wrap;
 }
 
 function init() {
