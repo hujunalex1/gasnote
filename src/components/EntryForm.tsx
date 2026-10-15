@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button.tsx'
+import { DatePicker } from '@/components/DatePicker.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
 import { isValidDate, parseAmountInput, todayISO } from '@/lib/format.ts'
@@ -60,13 +61,7 @@ export function EntryForm({ onAdd }: Props) {
           <Label htmlFor="entry-date" className="font-mono text-[11px] text-muted-foreground">
             日期
           </Label>
-          <Input
-            id="entry-date"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="h-10 sm:w-[150px]"
-          />
+          <DatePicker id="entry-date" value={date} onChange={setDate} />
         </div>
 
         <div className="flex w-full flex-col gap-1.5 sm:w-auto">

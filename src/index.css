@@ -139,6 +139,16 @@
     --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* Base UI 关闭弹层后不立即卸载元素，而是等退场动画播完再卸载。
+   本项目的动画链（shadcn 的 data-closed:animate-out + tw-animate-css）没有生效，
+   于是元素被标成 data-closed 却仍以 display:block 留在屏幕上 —— 表现就是
+   「弹层关不掉」。这里按 Base UI 自己的状态标记兜底隐藏。
+   若 Base UI 将来恢复正常卸载，这条规则也无害。 */
+[data-slot="popover-content"][data-closed],
+[data-slot="select-content"][data-closed] {
+  display: none;
+}
+
 /* 切换深浅色的那一帧里全局关掉过渡。
    否则每个带 transition 的元素都会把颜色慢慢淡过去 —— 主题切换本该是瞬时的，
    逐色淡入既拖沓又不传达任何信息（实测某些元素会慢 1 秒才跟上）。 */

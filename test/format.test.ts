@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAmountInput, formatMoney, toISODate, todayISO, isValidDate } from '../src/lib/format.ts';
+import { parseAmountInput, formatMoney, toISODate, fromISODate, todayISO, isValidDate } from '../src/lib/format.ts';
 
 test('接受整数金额', () => {
   assert.deepEqual(parseAmountInput('320'), { ok: true, amount: 320 });
@@ -142,4 +142,28 @@ test('isValidDate 拒绝不存在的日子', () => {
 test('isValidDate 正确处理闰年二月', () => {
   assert.equal(isValidDate('2024-02-29'), true);  // 闰年
   assert.equal(isValidDate('2026-02-29'), false); // 平年
+});
+
+// 日期选择器要把 "YYYY-MM-DD" 变成 Date 喂给 react-day-picker。
+// 绝不能用 new Date("2026-10-15")——那按 UTC 解析，负时区会显示成 10 月 14 日。
+test('fromISODate：解析成当地日期的零点，不经过 UTC', () => {
+  const d = fromISODate('2026-10-15');
+  assert.ok(d instanceof Date);
+  assert.equal(d.getFullYear(), 2026);
+  assert.equal(d.getMonth(), 9); // 10 月，0-based
+  assert.equal(d.getDate(), 15);
+  assert.equal(d.getHours(), 0);
+});
+
+test('fromISODate ↔ toISODate 往返一致', () => {
+  for (const s of ['2026-01-01', '2026-10-15', '2024-02-29', '2026-12-31']) {
+    assert.equal(toISODate(fromISODate(s)!), s);
+  }
+});
+
+test('fromISODate：非法输入返回 undefined 而不是 Invalid Date', () => {
+  assert.equal(fromISODate('2026-02-30'), undefined);
+  assert.equal(fromISODate('abc'), undefined);
+  assert.equal(fromISODate(''), undefined);
+  assert.equal(fromISODate(null), undefined);
 });

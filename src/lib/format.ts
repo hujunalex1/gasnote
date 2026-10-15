@@ -74,3 +74,16 @@ export function isValidDate(value: unknown): boolean {
   const daysInMonth = new Date(year, month, 0).getDate()
   return day <= daysInMonth
 }
+
+/**
+ * "YYYY-MM-DD" → 当地日期的零点。
+ *
+ * 不要用 new Date("2026-10-15")：那个字符串按 UTC 解析，
+ * 在负时区（美洲）会回退成 10 月 14 日，日历上就选错一天。
+ * 日期非法时返回 undefined，绝不返回 Invalid Date——那会让日历年月显示成 NaN。
+ */
+export function fromISODate(value: unknown): Date | undefined {
+  if (!isValidDate(value)) return undefined
+  const [year, month, day] = String(value).split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
