@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeRecords, parseImport, serialize, newId, newIdFallback, SCHEMA_VERSION } from '../src/store.js';
+import {
+  normalizeRecords, parseImport, serialize, newId, newIdFallback, SCHEMA_VERSION,
+  decodeStored, probeStorage, load, save, STORAGE_KEY, CORRUPT_KEY,
+} from '../src/store.js';
 
 const good = (over = {}) => ({ id: 'a1', date: '2026-10-15', amount: 320.5, note: '', ...over });
 
@@ -154,4 +157,124 @@ test('serialize：产物带版本号且能被 parseImport 读回', () => {
   const parsed = JSON.parse(text);
   assert.equal(parsed.version, SCHEMA_VERSION);
   assert.equal(parsed.records.length, 1);
+});
+
+// 一个够用的假 localStorage
+function fakeStorage(initial = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+    _dump: () => Object.fromEntries(map),
+  };
+}
+
+test('decodeStored：null/空串视为空数据', () => {
+  assert.equal(decodeStored(null).status, 'empty');
+  assert.equal(decodeStored('').status, 'empty');
+  assert.equal(decodeStored(undefined).status, 'empty');
+});
+
+test('decodeStored：合法数据返回 ok', () => {
+  const raw = serialize([good()]);
+  const d = decodeStored(raw);
+  assert.equal(d.status, 'ok');
+  assert.equal(d.records.length, 1);
+});
+
+test('decodeStored：坏 JSON 返回 corrupt-format 并带上原文', () => {
+  const d = decodeStored('{不是 json');
+  assert.equal(d.status, 'corrupt-format');
+  assert.equal(d.raw, '{不是 json');
+  assert.deepEqual(d.records, []);
+});
+
+test('decodeStored：版本不认识返回 corrupt-version 并带上原文', () => {
+  const raw = JSON.stringify({ version: 99, records: [] });
+  const d = decodeStored(raw);
+  assert.equal(d.status, 'corrupt-version');
+  assert.equal(d.raw, raw);
+});
+
+test('probeStorage：正常存储返回 true', () => {
+  assert.equal(probeStorage(fakeStorage()), true);
+});
+
+test('probeStorage：storage 为 null 返回 false', () => {
+  assert.equal(probeStorage(null), false);
+  assert.equal(probeStorage(undefined), false);
+});
+
+test('probeStorage：写入抛异常返回 false', () => {
+  const hostile = {
+    getItem: () => null,
+    setItem: () => { throw new Error('QuotaExceededError'); },
+    removeItem: () => {},
+  };
+  assert.equal(probeStorage(hostile), false);
+});
+
+test('load：storage 为 null 时返回空数据并给出提示', () => {
+  const r = load(null);
+  assert.deepEqual(r.records, []);
+  assert.equal(r.notice.kind, 'storage-unavailable');
+});
+
+test('load：存储为空时返回空数据且无提示', () => {
+  const r = load(fakeStorage());
+  assert.deepEqual(r.records, []);
+  assert.equal(r.notice, null);
+});
+
+test('load：读回已保存的数据', () => {
+  const storage = fakeStorage();
+  save(storage, [good()]);
+  const r = load(storage);
+  assert.equal(r.notice, null);
+  assert.equal(r.records.length, 1);
+  assert.equal(r.records[0].amount, 320.5);
+});
+
+// 未知版本绝不能静默丢弃
+test('load：遇到未知版本时备份原文、返回空数据并给出提示', () => {
+  const raw = JSON.stringify({ version: 99, records: [good()] });
+  const storage = fakeStorage({ [STORAGE_KEY]: raw });
+  const r = load(storage);
+  assert.deepEqual(r.records, []);
+  assert.equal(r.notice.kind, 'corrupt-version');
+  assert.equal(storage.getItem(CORRUPT_KEY), raw);
+});
+
+test('load：遇到坏 JSON 时同样备份原文', () => {
+  const storage = fakeStorage({ [STORAGE_KEY]: '坏掉的内容' });
+  const r = load(storage);
+  assert.equal(r.notice.kind, 'corrupt-format');
+  assert.equal(storage.getItem(CORRUPT_KEY), '坏掉的内容');
+});
+
+// Review Focus 第 3 条：写入失败必须被明确报告
+test('save：写入抛异常时返回失败与可读的错误信息', () => {
+  const hostile = {
+    getItem: () => null,
+    setItem: () => { throw new Error('QuotaExceededError'); },
+    removeItem: () => {},
+  };
+  const r = save(hostile, [good()]);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /导出/);
+});
+
+test('save：storage 为 null 时返回失败而不是抛异常', () => {
+  const r = save(null, [good()]);
+  assert.equal(r.ok, false);
+  assert.equal(typeof r.error, 'string');
+});
+
+test('save：往返后金额与备注保持一致', () => {
+  const storage = fakeStorage();
+  const records = [good({ id: 'x', amount: 1234.56, note: '中石化' })];
+  save(storage, records);
+  const back = load(storage).records;
+  assert.deepEqual(back, records);
 });

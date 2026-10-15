@@ -102,3 +102,97 @@ export function parseImport(jsonString) {
 export function serialize(records) {
   return JSON.stringify({ version: SCHEMA_VERSION, records }, null, 2);
 }
+
+/**
+ * 把 localStorage 里的原始字符串解码成状态。
+ * 纯函数——不写任何东西，方便单测。
+ */
+export function decodeStored(raw) {
+  if (raw === null || raw === undefined || raw === '') {
+    return { status: 'empty', records: [] };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { status: 'corrupt-format', records: [], raw };
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { status: 'corrupt-format', records: [], raw };
+  }
+
+  if (parsed.version !== SCHEMA_VERSION) {
+    return { status: 'corrupt-version', records: [], raw };
+  }
+
+  const normalized = normalizeRecords(parsed.records);
+  if (!normalized.ok) return { status: 'corrupt-format', records: [], raw };
+
+  return { status: 'ok', records: normalized.records };
+}
+
+/** 探测 localStorage 是否真的可写（无痕模式、隐私设置都会让它抛异常）。 */
+export function probeStorage(storage) {
+  if (!storage) return false;
+  const probeKey = '__gasnote_probe__';
+  try {
+    storage.setItem(probeKey, '1');
+    storage.removeItem(probeKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 启动时读取数据。
+ *
+ * 遇到读不懂的数据时绝不静默丢弃：把原文备份到 CORRUPT_KEY，以空数据启动，
+ * 并把情况作为 notice 交给 UI 去显示横幅。宁可让用户看到空列表并被告知，
+ * 也不能让数据无声消失。
+ *
+ * notice.kind 取值：'storage-unavailable' | 'corrupt-version' | 'corrupt-format'
+ */
+export function load(storage) {
+  if (!storage) {
+    return { records: [], notice: { kind: 'storage-unavailable' } };
+  }
+
+  let raw;
+  try {
+    raw = storage.getItem(STORAGE_KEY);
+  } catch {
+    return { records: [], notice: { kind: 'storage-unavailable' } };
+  }
+
+  const decoded = decodeStored(raw);
+  if (decoded.status === 'ok') return { records: decoded.records, notice: null };
+  if (decoded.status === 'empty') return { records: [], notice: null };
+
+  // 损坏：先备份原文。备份失败也要继续，不能因此把数据弄丢。
+  try {
+    storage.setItem(CORRUPT_KEY, decoded.raw);
+  } catch {
+    /* 忽略：备份失败不影响后续流程 */
+  }
+
+  return { records: [], notice: { kind: decoded.status, raw: decoded.raw } };
+}
+
+/** 写入数据。失败时返回可读的错误，绝不静默吞掉。 */
+export function save(storage, records) {
+  if (!storage) {
+    return { ok: false, error: '浏览器不允许保存数据，本次记录只在当前页面有效。请点「导出」备份。' };
+  }
+  try {
+    storage.setItem(STORAGE_KEY, serialize(records));
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      error: '保存失败（可能是浏览器隐私模式或存储空间已满）。本次记录只在当前页面有效，请立刻点「导出」备份。',
+    };
+  }
+}
