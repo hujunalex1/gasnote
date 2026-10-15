@@ -1,6 +1,6 @@
 import { parseAmountInput, formatMoney, isValidDate, todayISO } from './format.js';
 import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights } from './stats.js';
-import { load, save, probeStorage, newId } from './store.js';
+import { load, save, probeStorage, newId, serialize, parseImport } from './store.js';
 
 // ---- 存储：不可用时降级为内存，功能照常，只是刷新即丢 ----
 function createMemoryStorage() {
@@ -294,6 +294,56 @@ function makeDeleteControls(id) {
   return wrap;
 }
 
+function handleExport() {
+  const blob = new Blob([serialize(state.records)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gasnote-backup-${todayISO()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * 导入是唯一可能一次性毁掉全部数据的操作，所以：
+ * 先全量解析校验（parseImport），通过了才覆盖。任何一步失败都保持现状不动。
+ */
+async function handleImportFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = ''; // 允许连续导入同一个文件
+  if (!file) return;
+
+  let text;
+  try {
+    text = await file.text();
+  } catch {
+    window.alert('读取文件失败。');
+    return;
+  }
+
+  const parsed = parseImport(text);
+  if (!parsed.ok) {
+    window.alert(`导入失败，你的数据没有任何改动。\n\n原因：${parsed.error}`);
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `将用文件里的 ${parsed.records.length} 条记录替换当前的 ${state.records.length} 条记录。\n\n此操作不可撤销，确定继续？`,
+  );
+  if (!confirmed) return;
+
+  state.records = parsed.records;
+  const result = save(storage, state.records);
+  renderAll();
+  window.alert(result.ok ? `已导入 ${parsed.records.length} 条记录。` : result.error);
+}
+
+function initImportExport() {
+  $('export-btn').addEventListener('click', handleExport);
+  $('import-btn').addEventListener('click', () => $('import-file').click());
+  $('import-file').addEventListener('change', handleImportFile);
+}
+
 function init() {
   const loaded = load(storage);
   state.records = loaded.records;
@@ -304,6 +354,7 @@ function init() {
   $('entry-form').addEventListener('submit', handleSubmit);
   $('year-select').addEventListener('change', onYearChange);
 
+  initImportExport();
   renderAll();
 }
 
