@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAmountInput, formatMoney } from '../src/format.js';
+import { parseAmountInput, formatMoney, toISODate, todayISO, isValidDate } from '../src/format.js';
 
 test('接受整数金额', () => {
   assert.deepEqual(parseAmountInput('320'), { ok: true, amount: 320 });
@@ -88,4 +88,58 @@ test('格式化：浮点累加误差不显示出来', () => {
 
 test('格式化：百万级千分位', () => {
   assert.equal(formatMoney(1234567.89), '¥1,234,567.89');
+});
+
+// Review Focus 第 2 条：本地时区。
+// 用 new Date(...) 构造的是「本地时间」，toISODate 必须原样反映本地年月日。
+// 如果实现里混进了 toISOString()，这两条会立刻挂掉。
+test('本地时间的深夜时刻不会被算成第二天', () => {
+  assert.equal(toISODate(new Date(2026, 9, 15, 23, 50, 0)), '2026-10-15');
+});
+
+test('本地时间的凌晨时刻不会被算成前一天', () => {
+  assert.equal(toISODate(new Date(2026, 9, 15, 0, 10, 0)), '2026-10-15');
+});
+
+test('月份和日期补零', () => {
+  assert.equal(toISODate(new Date(2026, 0, 5)), '2026-01-05');
+});
+
+test('12 月 31 日不越界到下一年', () => {
+  assert.equal(toISODate(new Date(2026, 11, 31, 23, 59, 59)), '2026-12-31');
+});
+
+test('todayISO 返回合法日期且等于本地今天', () => {
+  const today = todayISO();
+  assert.match(today, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(today, toISODate(new Date()));
+});
+
+test('isValidDate 接受合法日期', () => {
+  assert.equal(isValidDate('2026-10-15'), true);
+});
+
+test('isValidDate 拒绝格式不对的字符串', () => {
+  assert.equal(isValidDate('2026/10/15'), false);
+  assert.equal(isValidDate('26-10-15'), false);
+  assert.equal(isValidDate('2026-1-5'), false);
+  assert.equal(isValidDate(''), false);
+  assert.equal(isValidDate(null), false);
+  assert.equal(isValidDate(20261015), false);
+});
+
+test('isValidDate 拒绝不存在的月份', () => {
+  assert.equal(isValidDate('2026-00-15'), false);
+  assert.equal(isValidDate('2026-13-15'), false);
+});
+
+test('isValidDate 拒绝不存在的日子', () => {
+  assert.equal(isValidDate('2026-02-30'), false);
+  assert.equal(isValidDate('2026-04-31'), false);
+  assert.equal(isValidDate('2026-10-00'), false);
+});
+
+test('isValidDate 正确处理闰年二月', () => {
+  assert.equal(isValidDate('2024-02-29'), true);  // 闰年
+  assert.equal(isValidDate('2026-02-29'), false); // 平年
 });
