@@ -1,0 +1,10 @@
+{
+  // Cloudflare 已把 Pages 并入 Workers，静态站点现在用「assets-only Worker」发布。
+  // 没有 main，表示不需要任何 Worker 脚本，只托管 dist/ 里的静态文件。
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gasnote",
+  "compatibility_date": "2026-10-16",
+  "assets": {
+    "directory": "./dist"
+  }
+}
