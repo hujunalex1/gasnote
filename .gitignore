@@ -4,3 +4,5 @@ dist/
 *.local
 .superpowers/
 .wrangler/
+# tsc -b 的增量缓存：每次构建都变，且包含源文件清单，不该进版本控制
+*.tsbuildinfo
