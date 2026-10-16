@@ -39,7 +39,24 @@ npm run preview  # 本地预览构建产物
 
 浏览器 localStorage，key 为 `gasnote.records.v1`，只在你当前这台机器的这个浏览器里。
 
-**换浏览器、清缓存、换电脑都会丢。** 所以：
+**换浏览器、清缓存、换电脑都会丢。** 另外 localStorage 按「源」隔离：`localhost:5173` 和线上域名
+是两套互不相干的数据，换地址看到空列表不是数据丢了，是它在另一个源里。
+
+**自动备份（把副本写到磁盘）**
+
+点右上角「自动备份」→「选择备份文件夹」授权一个目录，之后每次改动 2 秒后会自动把当天那份
+快照写进去，文件名 `gasnote-YYYY-MM-DD.json`，**内容与「导出」完全一致**，可直接用「导入」恢复。
+保留最近 14 份，更早的自动删除，且**只删严格符合这个命名格式的文件**——目录里的照片、
+`.DS_Store`、你手改过名字的备份一律不碰。把目录选在 iCloud Drive 里，就等于顺带存到了云上
+（上传由 iCloud 客户端负责）。关掉自动备份**不会**删除磁盘上已有的备份。
+
+**这个功能只在桌面版 Chrome / Edge 里可用。** 它依赖 File System Access API，MDN 标注为
+[not Baseline](https://developer.mozilla.org/en-US/docs/Web/API/Window/showSaveFilePicker)，
+Safari、Firefox、iPhone 都不支持。在不支持的浏览器上按钮里会直接说明，并改为在超过 14 天
+没拿到数据副本时于页面顶部提醒。另外浏览器重启后权限偶尔会退回「需要确认」，此时按钮显示
+「自动备份 !」，点一下「恢复自动备份」即可——**它不是 100% 无感**。
+
+**手动备份**
 
 - 定期点「导出」，会下载一个 `gasnote-backup-YYYY-MM-DD.json`。
 - 需要恢复时点「导入」选择那个文件即可。
@@ -62,15 +79,18 @@ npm run preview  # 本地预览构建产物
 ```
 src/
 ├── lib/           纯逻辑层，不 import React、不碰 DOM
-│   ├── format.ts    金额与日期的文本 ↔ 数值（可单测）
-│   ├── stats.ts     统计纯函数（可单测）
-│   ├── store.ts     持久化与导入校验（storage 是注入的，可单测）
-│   ├── storage.ts   存储降级（无痕模式 → 内存）
-│   ├── theme.ts     深浅色主题
-│   └── types.ts     共享类型
+│   ├── format.ts      金额与日期的文本 ↔ 数值（可单测）
+│   ├── stats.ts       统计纯函数（可单测）
+│   ├── store.ts       持久化与导入校验（storage 是注入的，可单测）
+│   ├── storage.ts     存储降级（无痕模式 → 内存）
+│   ├── backup.ts      备份文件名 / 该删哪些 / 该不该提醒（可单测）
+│   ├── fileBackup.ts  文件系统与 IndexedDB 的薄适配层（不写单测）
+│   ├── theme.ts       深浅色主题
+│   └── types.ts       共享类型
 ├── components/    界面
 │   └── ui/        shadcn 生成的组件源码（归你所有，可随意改）
-└── test/          95 个单元测试
+├── fs-access.d.ts 补 TypeScript 尚未覆盖的 File System Access 成员
+└── test/          115 个单元测试
 ```
 
 逻辑层刻意不依赖 React 也不碰 DOM，所以可以直接用 **Node 内置测试运行器**跑 ——
@@ -84,11 +104,13 @@ npm test
 界面层没有自动化测试（零依赖时代搭 DOM 测试环境需要引入构建链，得不偿失；现在虽有构建链，
 但仍未补上）。改动界面后请手动在浏览器里走一遍：
 
-记一笔 → 跨月记账 → 切月份 → 切年份 → 删除 → 导出 → 导入一个损坏文件确认数据没被破坏。
+记一笔 → 跨月记账 → 切月份 → 切年份 → 删除 → 导出 → 导入一个损坏文件确认数据没被破坏
+→ 开启自动备份，确认目录里出现了文件、且目录里原有的无关文件没被删掉。
 
 ## 已知取舍
 
-- **打包产物 JS 392KB（gzip 130KB）**，全部来自 React + Base UI。选 React 组件库的直接代价，
+- **打包产物 JS 507KB（gzip 165KB）**。这笔账最早是 React + Base UI（392KB），
+  后来为了换掉原生日期选择器又引入 `date-fns` 与 `react-day-picker`，涨到 500KB 上下。
   对一个小工具来说是偏重的。前一个零构建原生版本是 0KB，已打 tag `v1-zero-build` 存档。
 - `src/components/ui/*` 是 shadcn **复制进仓库的源码**，不是 npm 依赖。
   升级用 `npx shadcn@latest add <name> --overwrite` 重新拉取。

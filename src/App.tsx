@@ -1,11 +1,26 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button.tsx'
+import { BackupPanel } from '@/components/BackupPanel.tsx'
 import { EntryForm } from '@/components/EntryForm.tsx'
 import { NoticeBanner } from '@/components/NoticeBanner.tsx'
 import { RecordList } from '@/components/RecordList.tsx'
 import { SpendChart } from '@/components/SpendChart.tsx'
 import { SummaryPanel } from '@/components/SummaryPanel.tsx'
 import { ThemeToggle } from '@/components/ThemeToggle.tsx'
+import { DAY_MS, shouldRemindExport } from '@/lib/backup.ts'
+import {
+  clearDirectoryHandle,
+  describeBackupError,
+  hasWritePermission,
+  isBackupSupported,
+  loadDirectoryHandle,
+  pickBackupDirectory,
+  readBackupMeta,
+  runBackup,
+  saveDirectoryHandle,
+  writeBackupMeta,
+  type BackupMeta,
+} from '@/lib/fileBackup.ts'
 import { todayISO } from '@/lib/format.ts'
 import { allYears, monthKey, summaryCards, yearlySummary } from '@/lib/stats.ts'
 import { load, parseImport, save, serialize, type Notice, type StorageLike } from '@/lib/store.ts'
@@ -48,6 +63,20 @@ export function App() {
   const [isDark, setIsDark] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // ---- 自动备份：localStorage 仍是主存储，备份只是单向落盘 ----
+  const [backupSupported] = useState(isBackupSupported)
+  const [backupMeta, setBackupMeta] = useState<BackupMeta>(() => readBackupMeta(storage))
+  const [needsPermission, setNeedsPermission] = useState(false)
+  const [backupError, setBackupError] = useState<string | null>(null)
+  /** 目录句柄本身存在 IndexedDB 里，这里只是内存中的当前引用 */
+  const backupHandleRef = useRef<FileSystemDirectoryHandle | null>(null)
+  /** 定时器回调读它，避免拿到过期的 records */
+  const recordsRef = useRef(records)
+  recordsRef.current = records
+  /** 同上：连续更新元信息时不互相覆盖 */
+  const metaRef = useRef(backupMeta)
+  metaRef.current = backupMeta
+
   // 主题：首屏类名已由 index.html 的内联脚本挂好，这里只同步 React 状态
   useEffect(() => {
     const saved = readSavedTheme(storage)
@@ -65,6 +94,107 @@ export function App() {
     query?.addEventListener?.('change', onChange)
     return () => query?.removeEventListener?.('change', onChange)
   }, [storage])
+
+  /**
+   * 更新并持久化备份元信息。
+   *
+   * 副作用刻意放在 setState 的 updater 之外：updater 在 StrictMode 下会被调用两次，
+   * 在里面写盘就会重复写。这里先更新 ref，保证同一 tick 内连续调用不会互相覆盖。
+   */
+  function updateMeta(patch: Partial<BackupMeta>): void {
+    const next = { ...metaRef.current, ...patch }
+    metaRef.current = next
+    setBackupMeta(next)
+    writeBackupMeta(storage, next)
+  }
+
+  /**
+   * 跑一次备份。
+   *
+   * request=false 时只查询权限、不弹窗，所以挂在定时器和挂载流程里是安全的；
+   * request=true 只能在用户点击的调用栈里用——浏览器要求申请权限必须来自手势。
+   */
+  async function backupNow(request: boolean): Promise<void> {
+    const handle = backupHandleRef.current
+    if (!handle) return
+    setBackupError(null)
+    try {
+      if (!(await hasWritePermission(handle, request))) {
+        setNeedsPermission(true)
+        return
+      }
+      setNeedsPermission(false)
+      const outcome = await runBackup(handle, todayISO(), serialize(recordsRef.current))
+      if (!outcome.ok) {
+        if (outcome.reason === 'no-permission') setNeedsPermission(true)
+        else setBackupError(describeBackupError(outcome.error))
+        return
+      }
+      updateMeta({ lastCopiedAt: Date.now() })
+    } catch (error) {
+      setBackupError(describeBackupError(error))
+    }
+  }
+
+  async function handleEnableBackup(): Promise<void> {
+    try {
+      const dir = await pickBackupDirectory()
+      if (!dir) return // 用户取消，不是错误
+      if (!(await hasWritePermission(dir, true))) {
+        setBackupError('没有拿到备份目录的写入权限，自动备份没有开启。')
+        return
+      }
+      await saveDirectoryHandle(dir)
+      backupHandleRef.current = dir
+      setBackupError(null)
+      setNeedsPermission(false)
+      updateMeta({ dirName: dir.name })
+      // 立刻写一份，别让用户等到下次改动才看见效果
+      await backupNow(false)
+    } catch (error) {
+      setBackupError(describeBackupError(error))
+    }
+  }
+
+  async function handleDisableBackup(): Promise<void> {
+    try {
+      await clearDirectoryHandle()
+    } catch {
+      /* 句柄清不掉不该卡住"关闭"这个动作 */
+    }
+    backupHandleRef.current = null
+    setNeedsPermission(false)
+    setBackupError(null)
+    // 只断开连接，不删磁盘上已经写好的备份——那是用户的文件，删了不可逆
+    updateMeta({ dirName: null })
+  }
+
+  // 启动时恢复备份目录。只查询权限、绝不申请：申请必须来自用户手势，
+  // 在挂载流程里调用会被浏览器直接拒绝。
+  useEffect(() => {
+    if (!backupSupported) return
+    let cancelled = false
+    void (async () => {
+      const handle = await loadDirectoryHandle()
+      if (!handle || cancelled) return
+      backupHandleRef.current = handle
+      const granted = await hasWritePermission(handle, false)
+      if (cancelled) return
+      setNeedsPermission(!granted)
+      updateMeta({ dirName: handle.name })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [backupSupported])
+
+  // 改动后 2 秒写盘；挂载时也会跑一次，顺手刷新当天那份快照。
+  // 只有权限已经是 granted 才会真写，所以这里不会弹权限窗。
+  useEffect(() => {
+    if (!backupSupported || backupMeta.dirName === null) return
+    const timer = setTimeout(() => void backupNow(false), 2000)
+    return () => clearTimeout(timer)
+  }, [records, backupSupported, backupMeta.dirName])
 
   /** 落盘并把结果如实反映到横幅上。返回是否成功，让调用方决定怎么措辞。 */
   function persist(next: FuelRecord[]): boolean {
@@ -105,6 +235,8 @@ export function App() {
     anchor.download = `gasnote-backup-${todayISO()}.json`
     anchor.click()
     URL.revokeObjectURL(url)
+    // 手动导出同样算"拿到了一份数据副本"，用来消掉超期提醒
+    updateMeta({ lastCopiedAt: Date.now() })
   }
 
   /**
@@ -153,6 +285,24 @@ export function App() {
   const summary = yearlySummary(records, year)
   const years = allYears(records, currentYear)
 
+  // 自动备份正常工作时不该再唠叨，所以只在它不可用/没开/出问题时才算提醒。
+  // 时间是每天才变一次的量，不值得进 useMemo。
+  const autoBackupHealthy =
+    backupMeta.dirName !== null && !needsPermission && backupError === null
+  const reminder =
+    !autoBackupHealthy &&
+    shouldRemindExport(backupMeta.lastCopiedAt, Date.now(), records.length)
+      ? `${
+          backupMeta.lastCopiedAt === null
+            ? `还没有备份过，现有 ${records.length} 条记录只存在这个浏览器里。`
+            : `已经 ${Math.floor((Date.now() - backupMeta.lastCopiedAt) / DAY_MS)} 天没有备份了（现有 ${records.length} 条记录）。`
+        }${
+          backupSupported
+            ? '点右上角「自动备份」可以让它每次改动都自动写一份。'
+            : '这个浏览器不支持自动写盘，请点「导出」手动存一份。'
+        }`
+      : null
+
   // 排序：日期降序；同一天内按录入顺序倒序（后录入的在前）。
   // 带上原始下标是必需的——同一天多条时只比日期会得到 0，
   // 稳定排序会原样保留插入顺序，也就是「最旧的在最前」，与 spec §5 相反。
@@ -170,8 +320,18 @@ export function App() {
       <div className="mx-auto w-full max-w-[660px] px-4 pb-16 sm:px-5">
         <header className="flex items-center justify-between gap-3 border-b border-border pt-6 pb-4">
           <h1 className="m-0 font-mono text-[15px] font-semibold tracking-[0.02em]">加油记账</h1>
-          <div className="flex gap-1.5">
+          {/* flex-wrap：多了「自动备份」之后窄屏放不下，让它换行而不是溢出 */}
+          <div className="flex flex-wrap justify-end gap-1.5">
             <ThemeToggle isDark={isDark} onToggle={handleToggleTheme} />
+            <BackupPanel
+              supported={backupSupported}
+              dirName={backupMeta.dirName}
+              needsPermission={needsPermission}
+              lastCopiedAt={backupMeta.lastCopiedAt}
+              onEnable={() => void handleEnableBackup()}
+              onDisable={() => void handleDisableBackup()}
+              onBackupNow={() => void backupNow(true)}
+            />
             <Button variant="outline" size="sm" onClick={handleExport}>
               导出
             </Button>
@@ -182,7 +342,12 @@ export function App() {
         </header>
 
         <main className="flex flex-col gap-3 pt-4">
-          <NoticeBanner notice={notice} saveError={saveError} />
+          <NoticeBanner
+            notice={notice}
+            saveError={saveError}
+            backupError={backupError}
+            reminder={reminder}
+          />
           <EntryForm onAdd={handleAdd} />
           <SummaryPanel cards={cards} year={year} />
           <SpendChart
