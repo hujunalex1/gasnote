@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>加油记账</title>
+    <!-- 现代浏览器走 SVG（任意缩放都清晰），Safari 走 PNG 兜底；
+         iOS 加到主屏时用 apple-touch-icon。三个文件都在 public/ 下，
+        构建时原样拷到 dist/ 根目录。 -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
       // 在样式表应用前挂上 .dark，避免手动选了深色的用户看到白屏闪一下。
       // 没有手动选择时什么都不做，交给 CSS 的 prefers-color-scheme 处理。

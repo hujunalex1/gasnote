@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- 加油记账 favicon：三根琥珀柱 + 一条基线，与页面里那个柱状图同构。
+       坐标全部落在 16 格整数上（柱宽 4 / 间隙 1 / 边距 1），于是 16px 与
+       32px（正好 ×2）下每一道边都是硬边，不靠抗锯齿糊过去。
+       深墨底而不是卡片浅底：浅底在浅色标签栏上会和栏背景糊成一片。
+       基线内缩 1px，与柱子的左右边距对齐，不贴图标边缘。 -->
+  <rect width="16" height="16" fill="#17181a"/>
+  <g fill="#f0a424">
+    <rect x="1"  y="8"  width="4" height="6"/>
+    <rect x="6"  y="3"  width="4" height="11"/>
+    <rect x="11" y="10" width="4" height="4"/>
+    <rect x="1"  y="14" width="14" height="1"/>
+  </g>
+</svg>
