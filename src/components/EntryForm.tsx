@@ -24,7 +24,7 @@ export function EntryForm({ onAdd }: Props) {
       setError('请选择日期')
       return
     }
-    // <input type="date"> 正常只会给出合法值，这里是兜底：
+    // DatePicker 正常只会给出合法值，这里是兜底：
     // 非法日期一旦落库，会污染整条按月份分组的统计链。
     if (!isValidDate(date)) {
       setError('日期格式不对，应为 YYYY-MM-DD')

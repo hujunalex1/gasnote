@@ -16,7 +16,7 @@ npm run dev
 ## 其他命令
 
 ```bash
-npm test         # 95 个单元测试
+npm test         # 115 个单元测试
 npm run build    # 产出静态 dist/，丢到任何静态托管都能跑
 npm run preview  # 本地预览构建产物
 ```
@@ -89,8 +89,8 @@ src/
 │   └── types.ts       共享类型
 ├── components/    界面
 │   └── ui/        shadcn 生成的组件源码（归你所有，可随意改）
-├── fs-access.d.ts 补 TypeScript 尚未覆盖的 File System Access 成员
-└── test/          115 个单元测试
+└── fs-access.d.ts 补 TypeScript 尚未覆盖的 File System Access 成员
+test/              115 个单元测试（与 src/ 平级）
 ```
 
 逻辑层刻意不依赖 React 也不碰 DOM，所以可以直接用 **Node 内置测试运行器**跑 ——
