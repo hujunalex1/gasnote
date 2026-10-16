@@ -272,7 +272,8 @@ export function App() {
     anchor.href = url
     anchor.download = `gasnote-backup-${todayISO()}.json`
     anchor.click()
-    URL.revokeObjectURL(url)
+    // 不能紧跟着 revoke：Safari / Firefox 的下载是异步开始的，立刻释放偶尔会下载失败
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     // 手动导出同样算"拿到了一份数据副本"，用来消掉超期提醒
     updateMeta({ lastCopiedAt: Date.now() })
   }
