@@ -52,20 +52,20 @@ export function EntryForm({ onAdd }: Props) {
       noValidate
       className="rounded-none border border-border bg-muted/50 px-4 py-3.5"
     >
-      <h2 className="mb-3 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+      <h2 className="mb-3 font-mono text-xs font-medium tracking-[0.06em] text-muted-foreground">
         记一笔
       </h2>
 
       <div className="flex flex-col gap-3.5 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="flex w-full flex-col gap-1.5 sm:w-auto">
-          <Label htmlFor="entry-date" className="font-mono text-[11px] text-muted-foreground">
+          <Label htmlFor="entry-date" className="font-mono text-xs text-muted-foreground">
             日期
           </Label>
           <DatePicker id="entry-date" value={date} onChange={setDate} />
         </div>
 
         <div className="flex w-full flex-col gap-1.5 sm:w-auto">
-          <Label htmlFor="entry-amount" className="font-mono text-[11px] text-muted-foreground">
+          <Label htmlFor="entry-amount" className="font-mono text-xs text-muted-foreground">
             金额
           </Label>
           <Input
@@ -82,7 +82,7 @@ export function EntryForm({ onAdd }: Props) {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <Label htmlFor="entry-note" className="font-mono text-[11px] text-muted-foreground">
+          <Label htmlFor="entry-note" className="font-mono text-xs text-muted-foreground">
             备注
           </Label>
           <Input

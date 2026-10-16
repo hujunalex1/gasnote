@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Button } from '@/components/ui/button.tsx'
 import { BackupPanel } from '@/components/BackupPanel.tsx'
 import { EntryForm } from '@/components/EntryForm.tsx'
 import { NoticeBanner } from '@/components/NoticeBanner.tsx'
@@ -137,7 +136,7 @@ export function App() {
       // 自动触发的静默跳过；用户亲手点的要说清楚为什么没写
       if (request) {
         setBackupError(
-          '本地数据没有正常读出，自动备份已暂停，以免用空列表覆盖磁盘上已有的备份。请先用「导入」从备份恢复。',
+          '本地数据没有正常读出，自动备份已暂停，以免用空列表覆盖磁盘上已有的备份。请先用「备份」→「导入」从备份恢复。',
         )
       }
       return
@@ -337,8 +336,8 @@ export function App() {
             : `已经 ${Math.floor((Date.now() - backupMeta.lastCopiedAt) / DAY_MS)} 天没有备份了（现有 ${records.length} 条记录）。`
         }${
           backupSupported
-            ? '点右上角「自动备份」可以让它每次改动都自动写一份。'
-            : '这个浏览器不支持自动写盘，请点「导出」手动存一份。'
+            ? '点右上角「备份」可以让它每次改动都自动写一份。'
+            : '这个浏览器不支持自动写盘，请点右上角「备份」→「导出」手动存一份。'
         }`
       : null
 
@@ -359,9 +358,7 @@ export function App() {
       <div className="mx-auto w-full max-w-[660px] px-4 pb-16 sm:px-5">
         <header className="flex items-center justify-between gap-3 border-b border-border pt-6 pb-4">
           <h1 className="m-0 font-mono text-[15px] font-semibold tracking-[0.02em]">加油记账</h1>
-          {/* flex-wrap：多了「自动备份」之后窄屏放不下，让它换行而不是溢出 */}
-          <div className="flex flex-wrap justify-end gap-1.5">
-            <ThemeToggle isDark={isDark} onToggle={handleToggleTheme} />
+          <div className="flex items-center gap-1.5">
             <BackupPanel
               supported={backupSupported}
               dirName={backupMeta.dirName}
@@ -370,13 +367,10 @@ export function App() {
               onEnable={() => void handleEnableBackup()}
               onDisable={() => void handleDisableBackup()}
               onBackupNow={() => void backupNow(true)}
+              onExport={handleExport}
+              onImport={() => fileRef.current?.click()}
             />
-            <Button variant="outline" size="sm" onClick={handleExport}>
-              导出
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-              导入
-            </Button>
+            <ThemeToggle isDark={isDark} onToggle={handleToggleTheme} />
           </div>
         </header>
 

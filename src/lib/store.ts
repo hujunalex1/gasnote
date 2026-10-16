@@ -216,7 +216,7 @@ export function save(storage: StorageLike | null | undefined, records: FuelRecor
   if (!storage) {
     return {
       ok: false,
-      error: '浏览器不允许保存数据，本次记录只在当前页面有效。请点「导出」备份。',
+      error: '浏览器不允许保存数据，本次记录只在当前页面有效。请点右上角「备份」→「导出」。',
     }
   }
   try {
@@ -226,7 +226,7 @@ export function save(storage: StorageLike | null | undefined, records: FuelRecor
     return {
       ok: false,
       error:
-        '保存失败（可能是浏览器隐私模式或存储空间已满）。本次记录只在当前页面有效，请立刻点「导出」备份。',
+        '保存失败（可能是浏览器隐私模式或存储空间已满）。本次记录只在当前页面有效，请立刻点右上角「备份」→「导出」。',
     }
   }
 }

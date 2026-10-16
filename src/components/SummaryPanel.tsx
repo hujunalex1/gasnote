@@ -1,7 +1,7 @@
 import { formatMoney } from '@/lib/format.ts'
 import type { SummaryCards } from '@/lib/types.ts'
 
-const LABEL = 'm-0 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground'
+const LABEL = 'm-0 font-mono text-xs font-medium tracking-[0.06em] text-muted-foreground'
 
 /**
  * 本月是主数字、本年降为次级。

@@ -11,7 +11,7 @@ type Props = {
   reminder?: string | null
 }
 
-const CORRUPT_TAIL = `原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。自动备份（如已开启）在本次会话中暂停，不会用空列表覆盖磁盘上已有的备份。注意：点「导出」导出的是当前列表，不包含这份副本。`
+const CORRUPT_TAIL = `原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。自动备份（如已开启）在本次会话中暂停，不会用空列表覆盖磁盘上已有的备份。注意：「导出」导出的是当前列表，不包含这份副本。`
 
 export function NoticeBanner({
   notice,
@@ -29,7 +29,7 @@ export function NoticeBanner({
     text = backupError
     severe = true
   } else if (notice?.kind === 'storage-unavailable') {
-    text = '浏览器不允许保存数据（可能是无痕模式）。本次记录只在当前页面有效，刷新即丢。请点「导出」保存。'
+    text = '浏览器不允许保存数据（可能是无痕模式）。本次记录只在当前页面有效，刷新即丢。请点右上角「备份」→「导出」保存。'
   } else if (notice?.kind === 'corrupt-version') {
     text = `检测到本工具更新版本写入的数据，当前版本读不懂。${CORRUPT_TAIL}`
     severe = true

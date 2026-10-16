@@ -35,7 +35,7 @@ export function SpendChart({
   return (
     <section className="border border-border bg-card px-4 py-3.5">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="m-0 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+        <h2 className="m-0 font-mono text-xs font-medium tracking-[0.06em] text-muted-foreground">
           每月金额
         </h2>
         <Select

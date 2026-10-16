@@ -17,7 +17,7 @@ export function RecordList({ year, month, records, onDelete }: Props) {
 
   return (
     <section className="border border-border bg-card px-4 py-3.5">
-      <h2 className="mb-2 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground">
+      <h2 className="mb-2 font-mono text-xs font-medium tracking-[0.06em] text-muted-foreground">
         {year} 年 {month} 月明细
       </h2>
 
@@ -61,10 +61,12 @@ export function RecordList({ year, month, records, onDelete }: Props) {
                       </Button>
                     </>
                   ) : (
+                    // 删除是低频操作：平时只是一行灰字，不和金额抢视线；悬停才变红。
+                    // 真正的防误触在下一步的「确认删除？」，那一步仍是醒目的红色。
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      className="text-destructive hover:text-destructive"
+                      className="text-muted-foreground hover:text-destructive"
                       onClick={() => setConfirmingId(record.id)}
                     >
                       删除

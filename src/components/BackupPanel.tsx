@@ -14,9 +14,11 @@ type Props = {
   onEnable: () => void
   onDisable: () => void
   onBackupNow: () => void
+  onExport: () => void
+  onImport: () => void
 }
 
-const TITLE = 'm-0 font-mono text-[11px] font-medium tracking-[0.06em] text-muted-foreground'
+const TITLE = 'm-0 font-mono text-xs font-medium tracking-[0.06em] text-muted-foreground'
 const NOTE = 'm-0 text-[12px] leading-relaxed text-muted-foreground'
 
 /** 时间戳 → "10-16 10:32"。纯显示用，不进逻辑层。 */
@@ -35,6 +37,8 @@ export function BackupPanel({
   onEnable,
   onDisable,
   onBackupNow,
+  onExport,
+  onImport,
 }: Props) {
   const [open, setOpen] = useState(false)
   const enabled = dirName !== null
@@ -48,9 +52,9 @@ export function BackupPanel({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={<Button variant="outline" size="sm" aria-label="自动备份设置" />}
+        render={<Button variant="outline" size="sm" aria-label="备份与导入导出" />}
       >
-        {needsPermission ? '自动备份 !' : '自动备份'}
+        {needsPermission ? '备份 !' : '备份'}
       </PopoverTrigger>
 
       {/* 描边与去阴影由 ui/popover.tsx 的默认值提供，这里只限定宽度 */}
@@ -109,6 +113,22 @@ export function BackupPanel({
             </Button>
           </>
         )}
+
+        {/* 手动导出/导入和自动备份是同一件事（拿到一份数据副本）的两种做法，
+            放在一起；也让顶栏从四个等重按钮减到两个。
+            不支持自动写盘的浏览器上，这里就是唯一的备份手段。 */}
+        <div className="flex flex-col gap-2.5 border-t border-border pt-2.5">
+          <h2 className={TITLE}>手动</h2>
+          <p className={NOTE}>导出一个 JSON 文件；导入会用文件里的记录整体替换现有记录。</p>
+          <div className="flex gap-1.5">
+            <Button variant="outline" size="sm" onClick={run(onExport)}>
+              导出
+            </Button>
+            <Button variant="outline" size="sm" onClick={run(onImport)}>
+              导入
+            </Button>
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   )
