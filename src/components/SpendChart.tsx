@@ -71,11 +71,12 @@ export function SpendChart({
               aria-label={`${year} 年 ${m.month} 月，${formatMoney(m.total)}，${m.count} 次`}
               title={`${m.month} 月 ${formatMoney(m.total)} · ${m.count} 次`}
               onClick={() => onMonthSelect(m.month)}
-              // 悬停反馈刻意做得极轻。原先是 hover:bg-muted —— 一整根柱子那么高的
-              // --muted 压在卡片底色上深了整整一档，在扁平配色里读起来是一块脏印子
-              // （用户原话："有个灰色的阴影"），而不是"这里可以点"。
-              // 改成 5% 的墨色薄雾：能看出这一列可点，但不会跟柱子本身抢注意力。
-              className="group relative z-1 flex h-full flex-1 cursor-pointer flex-col justify-end rounded-none border-0 bg-transparent p-0 transition-colors hover:bg-foreground/5"
+              // 整列刻意不做任何填充。这里曾经是 hover:bg-muted，太重，改成 5% 墨色后
+              // 仍在：热区为了"点空白也能选月"占满整列高，而柱子贴底，于是柱子有多矮、
+              // 头上那块灰就有多大（9 月这种矮柱最明显）——同一个脏印子换了个位置而已。
+              // 反馈已经有两重，够用：柱子压深（group-hover:bg-(--bar-hover)）
+              // + 月份标签点亮（零高柱的标签还会从隐藏变显示）。
+              className="group relative z-1 flex h-full flex-1 cursor-pointer flex-col justify-end rounded-none border-0 bg-transparent p-0"
             >
               <div
                 // 刻意不加 transition-colors：切换深浅色时逐色淡入会让柱子慢一拍
