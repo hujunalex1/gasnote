@@ -56,8 +56,12 @@ export function SpendChart({
         </Select>
       </div>
 
-      {/* 基线让「零」有落点，而不是悬空 */}
-      <div className="relative flex h-[148px] items-end gap-[3px] pb-5">
+      {/* 基线让「零」有落点，而不是悬空。
+          高度 168 = 20(pt-5 的金额标签带) + 128(柱区) + 20(pb-5 的月份标签带)。
+          柱区必须严格保持 128px，和加标签之前一模一样：柱高是相对柱区的百分比，
+          柱区一旦被标签挤掉一截，最高的两根柱子就会看起来一样高——那是失真，
+          不是"稍微矮一点"。所以宁可把卡片加高 20px。 */}
+      <div className="relative flex h-[168px] items-end gap-[3px] pt-5 pb-5">
         <div className="absolute inset-x-0 bottom-5 h-px bg-border" aria-hidden />
 
         {summary.months.map((m, i) => {
@@ -92,6 +96,25 @@ export function SpendChart({
                 // 零高柱子保留 2px，表达「这个月没有记录」而不是渲染失败
                 style={{ height: `${heights[i] * 100}%`, minHeight: 2 }}
               />
+              {/* 只有选中的那根柱子标金额。bottom 用的是和柱高同一个百分比，
+                  所以它永远紧贴柱顶，与柱子多高无关。
+                  left-1/2 + -translate-x-1/2 + whitespace-nowrap：¥1,240.50 比
+                  列宽（桌面端约 46px）还宽，用 inset-x-0 会被压成半个字，
+                  这样写让标签按文字宽度撑开、以列为中轴居中。
+                  bg-card 底衬不是装饰：选中矮柱时标签会压到相邻的高柱上
+                  （9 月矮柱紧邻 10 月高柱就是这个情况），没有底衬就成了深琥珀
+                  底上的黑字，读不清。
+                  max(…, 2px) 是为了跟上柱子那边的 minHeight: 2px —— 零值月份的
+                  柱高是 0%，却被撑到 2px，标签如果只按 0% 算就会贴到柱子上
+                  （实测间隙 1px 而不是 3px）。下限写在这里，两边才对得上。 */}
+              {selected ? (
+                <span
+                  className="absolute left-1/2 -translate-x-1/2 bg-card px-1 font-mono text-[11px] leading-4 font-semibold whitespace-nowrap text-foreground"
+                  style={{ bottom: `calc(max(${heights[i] * 100}%, 2px) + 3px)` }}
+                >
+                  {formatMoney(m.total)}
+                </span>
+              ) : null}
               <span
                 // 悬停时把月份点亮：短柱/零高柱也能看出反馈，顺带提示正指着哪个月
                 className={cn(
