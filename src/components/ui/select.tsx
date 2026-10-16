@@ -84,7 +84,12 @@ function SelectContent({
           data-align-trigger={alignItemWithTrigger}
           // 同 popover.tsx：去掉进出场动画。Base UI 等退场动画结束才卸载，
           // 而这套动画在本项目里不生效，弹层会卡在屏幕上关不掉。
-          className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10", className )}
+          //
+          // 同样把 shadow-md + ring-1 换成 1px 描边。这里**必须**补上边框：
+          // 下拉原本 border-width 是 0，完全靠那层投影和背景分离，
+          // 只去阴影不补描边的话它会糊进卡片里。
+          // 将来 `npx shadcn@latest add select --overwrite` 会改回来，需重新应用。
+          className={cn("relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-popover text-popover-foreground", className )}
           {...props}
         >
           <SelectScrollUpButton />

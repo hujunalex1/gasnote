@@ -51,9 +51,11 @@ export function DatePicker({ id, value, onChange, invalid = false }: Props) {
         <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
 
+      {/* 描边与去阴影现在由 ui/popover.tsx 的默认值提供，这里只需覆盖内边距：
+          日历和「今天」按钮要自己撑满弹层，默认的 p-2.5 会在四周留一圈。 */}
       <PopoverContent
         align="start"
-        className="w-auto rounded-none border border-border p-0 shadow-none ring-0"
+        className="w-auto p-0"
       >
         <Calendar
           mode="single"

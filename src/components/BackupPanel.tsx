@@ -53,7 +53,8 @@ export function BackupPanel({
         {needsPermission ? '自动备份 !' : '自动备份'}
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-80 rounded-none border border-border">
+      {/* 描边与去阴影由 ui/popover.tsx 的默认值提供，这里只限定宽度 */}
+      <PopoverContent align="end" className="w-80">
         <h2 className={TITLE}>自动备份</h2>
 
         {!supported ? (

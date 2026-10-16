@@ -113,4 +113,12 @@ npm test
   后来为了换掉原生日期选择器又引入 `date-fns` 与 `react-day-picker`，涨到 500KB 上下。
   对一个小工具来说是偏重的。前一个零构建原生版本是 0KB，已打 tag `v1-zero-build` 存档。
 - `src/components/ui/*` 是 shadcn **复制进仓库的源码**，不是 npm 依赖。
-  升级用 `npx shadcn@latest add <name> --overwrite` 重新拉取。
+  升级用 `npx shadcn@latest add <name> --overwrite` 重新拉取——但本仓库对它们做过
+  **两处刻意改动，重拉后必须重新应用**，否则会静默退化：
+
+  1. `popover.tsx`、`select.tsx` 去掉了进出场动画。Base UI 要等退场动画播完才卸载
+     元素，而这套 `tw-animate-css` 在本项目里不生效，结果是弹层被标成 `data-closed`
+     却留在屏幕上关不掉。
+  2. 同两个文件把 `shadow-md ring-1` 换成了 1px 描边：本项目的分层手段是细描边，
+     不用投影。**`select.tsx` 原本 `border-width` 是 0**，只去阴影不补描边的话，
+     年度下拉会糊进卡片里（它和卡片是同一个背景色 `#f2f2ef`）。
