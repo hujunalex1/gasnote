@@ -88,7 +88,7 @@ export function SpendChart({
                 // 仪表上的指示器是跳变，不是渐隐。
                 // 柱子本身也给一点悬停反馈，否则很短或零高的柱子悬停时几乎看不出来
                 className={cn(
-                  'rounded-none transition-colors',
+                  'rounded-none',
                   selected
                     ? 'bg-(--bar-selected)'
                     : 'bg-chart-1 group-hover:bg-(--bar-hover)',
