@@ -23,7 +23,16 @@ import {
 } from '@/lib/fileBackup.ts'
 import { todayISO } from '@/lib/format.ts'
 import { allYears, monthKey, summaryCards, yearlySummary } from '@/lib/stats.ts'
-import { load, parseImport, save, serialize, type Notice, type StorageLike } from '@/lib/store.ts'
+import {
+  decodeStored,
+  load,
+  parseImport,
+  save,
+  serialize,
+  STORAGE_KEY,
+  type Notice,
+  type StorageLike,
+} from '@/lib/store.ts'
 import { resolveStorage } from '@/lib/storage.ts'
 import {
   applyThemeClass,
@@ -184,6 +193,19 @@ export function App() {
     // 只断开连接，不删磁盘上已经写好的备份——那是用户的文件，删了不可逆
     updateMeta({ dirName: null })
   }
+
+  // 别的标签页写了数据就跟着换成那份。否则这边再记一笔时会拿自己手里的旧列表
+  // 整体覆盖回去，那边刚记的就无声消失了。storage 事件只在「别的」标签页写入时触发。
+  // 读不懂的新值不接（保持现状），损坏处理只在启动时的 load() 里做一次。
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY) return
+      const decoded = decodeStored(event.newValue)
+      if (decoded.status === 'ok' || decoded.status === 'empty') setRecords(decoded.records)
+    }
+    globalThis.addEventListener?.('storage', onStorage)
+    return () => globalThis.removeEventListener?.('storage', onStorage)
+  }, [])
 
   // 启动时恢复备份目录。只查询权限、绝不申请：申请必须来自用户手势，
   // 在挂载流程里调用会被浏览器直接拒绝。
