@@ -11,7 +11,7 @@ type Props = {
   reminder?: string | null
 }
 
-const CORRUPT_TAIL = `原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。注意：点「导出」导出的是当前列表，不包含这份副本。`
+const CORRUPT_TAIL = `原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。自动备份（如已开启）在本次会话中暂停，不会用空列表覆盖磁盘上已有的备份。注意：点「导出」导出的是当前列表，不包含这份副本。`
 
 export function NoticeBanner({
   notice,

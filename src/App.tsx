@@ -68,6 +68,13 @@ export function App() {
   const [backupMeta, setBackupMeta] = useState<BackupMeta>(() => readBackupMeta(storage))
   const [needsPermission, setNeedsPermission] = useState(false)
   const [backupError, setBackupError] = useState<string | null>(null)
+  /**
+   * 启动时没读到真实数据（损坏，或存储不可用退到了内存），此刻的 records 是一个
+   * 「被迫为空」的列表，不是用户的数据。这时写盘会用空列表覆盖当天那份真实快照，
+   * 连续几天不处理还会让 14 份滚动保留把有效备份全部挤掉。所以整个会话都不写。
+   * notice 只在启动时定一次，之后不会变，用它判断就够了。
+   */
+  const backupSuspended = notice !== null
   /** 目录句柄本身存在 IndexedDB 里，这里只是内存中的当前引用 */
   const backupHandleRef = useRef<FileSystemDirectoryHandle | null>(null)
   /** 定时器回调读它，避免拿到过期的 records */
@@ -117,6 +124,15 @@ export function App() {
   async function backupNow(request: boolean): Promise<void> {
     const handle = backupHandleRef.current
     if (!handle) return
+    if (backupSuspended) {
+      // 自动触发的静默跳过；用户亲手点的要说清楚为什么没写
+      if (request) {
+        setBackupError(
+          '本地数据没有正常读出，自动备份已暂停，以免用空列表覆盖磁盘上已有的备份。请先用「导入」从备份恢复。',
+        )
+      }
+      return
+    }
     setBackupError(null)
     try {
       if (!(await hasWritePermission(handle, request))) {
@@ -191,7 +207,7 @@ export function App() {
   // 改动后 2 秒写盘；挂载时也会跑一次，顺手刷新当天那份快照。
   // 只有权限已经是 granted 才会真写，所以这里不会弹权限窗。
   useEffect(() => {
-    if (!backupSupported || backupMeta.dirName === null) return
+    if (!backupSupported || backupSuspended || backupMeta.dirName === null) return
     const timer = setTimeout(() => void backupNow(false), 2000)
     return () => clearTimeout(timer)
   }, [records, backupSupported, backupMeta.dirName])
