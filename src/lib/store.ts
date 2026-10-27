@@ -69,6 +69,23 @@ function validateRecord(r: unknown): string | null {
   if (typeof rec.amount !== 'number' || !Number.isFinite(rec.amount) || rec.amount <= 0) {
     return `金额不是大于 0 的数字：${JSON.stringify(rec.amount)}`
   }
+  // 油耗字段选填，缺省（undefined / null）合法；但一旦写了就必须是合法值，
+  // 不能把坏里程悄悄当成「没填」，那会让用户以为那一段油耗是对的。
+  if (
+    rec.odometer != null &&
+    (typeof rec.odometer !== 'number' || !Number.isInteger(rec.odometer) || rec.odometer <= 0)
+  ) {
+    return `里程不是大于 0 的整数：${JSON.stringify(rec.odometer)}`
+  }
+  if (
+    rec.liters != null &&
+    (typeof rec.liters !== 'number' || !Number.isFinite(rec.liters) || rec.liters <= 0)
+  ) {
+    return `升数不是大于 0 的数字：${JSON.stringify(rec.liters)}`
+  }
+  if (rec.full != null && typeof rec.full !== 'boolean') {
+    return `「是否加满」不是 true/false：${JSON.stringify(rec.full)}`
+  }
   return null
 }
 
@@ -76,7 +93,10 @@ function validateRecord(r: unknown): string | null {
  * 校验并规整记录数组。
  *
  * 拒绝（整体失败，绝不返回半截结果）：元素不是对象、日期非法、金额非法。
- * 修补（不拒绝）：id 缺失或重复 → 补发；note 非字符串 → 补空串；金额归整到分。
+ * 修补（不拒绝）：id 缺失或重复 → 补发；note 非字符串 → 补空串；金额、升数归整到两位小数。
+ * 里程 / 升数 / 是否加满都是选填，缺省合法；写了却不合法同样整体拒绝。
+ *
+ * 版本号仍是 1：新字段全部可选，旧备份不经迁移即可导入。
  *
  * 为什么 id 只修补不拒绝：id 是内部实现细节，用户看不见也不该关心。
  * 它坏掉不该让整份备份作废——那会让用户手里唯一的一份备份变成废纸。
@@ -97,12 +117,17 @@ export function normalizeRecords(input: unknown): NormalizeResult {
     if (seen.has(id)) id = newId()
     seen.add(id)
 
-    records.push({
+    const record: FuelRecord = {
       id,
       date: r!.date as string,
       amount: Math.round((r!.amount as number) * 100) / 100,
       note: typeof r!.note === 'string' ? r!.note : '',
-    })
+    }
+    // 只在有值时才带上，旧记录规整后与原来逐字段一致
+    if (typeof r!.odometer === 'number') record.odometer = r!.odometer
+    if (typeof r!.liters === 'number') record.liters = Math.round(r!.liters * 100) / 100
+    if (typeof r!.full === 'boolean') record.full = r!.full
+    records.push(record)
   }
 
   return { ok: true, records }

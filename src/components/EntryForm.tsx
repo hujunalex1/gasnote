@@ -3,16 +3,31 @@ import { Button } from '@/components/ui/button.tsx'
 import { DatePicker } from '@/components/DatePicker.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Label } from '@/components/ui/label.tsx'
-import { isValidDate, parseAmountInput, todayISO } from '@/lib/format.ts'
+import {
+  formatKm,
+  isValidDate,
+  parseAmountInput,
+  parseLitersInput,
+  parseOdometerInput,
+  todayISO,
+} from '@/lib/format.ts'
+import { odometerBounds } from '@/lib/stats.ts'
 import { newId } from '@/lib/store.ts'
 import type { FuelRecord } from '@/lib/types.ts'
 
-type Props = { onAdd: (record: FuelRecord) => void }
+type Props = {
+  /** 全部已有记录，只用来校验总里程是否前后矛盾 */
+  records: FuelRecord[]
+  onAdd: (record: FuelRecord) => void
+}
 
-export function EntryForm({ onAdd }: Props) {
+export function EntryForm({ records, onAdd }: Props) {
   const [date, setDate] = useState(todayISO)
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [odometer, setOdometer] = useState('')
+  const [liters, setLiters] = useState('')
+  const [full, setFull] = useState(true)
   const [error, setError] = useState('')
   const amountRef = useRef<HTMLInputElement>(null)
 
@@ -37,12 +52,47 @@ export function EntryForm({ onAdd }: Props) {
       return
     }
 
-    onAdd({ id: newId(), date, amount: parsed.amount, note: note.trim() })
+    const parsedOdometer = parseOdometerInput(odometer)
+    if (!parsedOdometer.ok) {
+      setError(parsedOdometer.error)
+      return
+    }
+    const parsedLiters = parseLitersInput(liters)
+    if (!parsedLiters.ok) {
+      setError(parsedLiters.error)
+      return
+    }
+
+    // 总里程只增不减。填错一位数会让前后两段油耗同时离谱，所以在这里就拦下
+    if (parsedOdometer.value !== undefined) {
+      const { min, max } = odometerBounds(records, date)
+      if (min !== null && parsedOdometer.value <= min) {
+        setError(`总里程应大于之前记录的 ${formatKm(min)}`)
+        return
+      }
+      if (max !== null && parsedOdometer.value >= max) {
+        setError(`总里程应小于之后记录的 ${formatKm(max)}`)
+        return
+      }
+    }
+
+    const record: FuelRecord = { id: newId(), date, amount: parsed.amount, note: note.trim() }
+    if (parsedOdometer.value !== undefined) record.odometer = parsedOdometer.value
+    if (parsedLiters.value !== undefined) {
+      record.liters = parsedLiters.value
+      // 「是否加满」只有在知道加了多少升时才有意义
+      record.full = full
+    }
+    onAdd(record)
 
     // 日期重置为今天而不是保留上次的值，避免用户忘了改日期而把账记进错误的月份
     setDate(todayISO())
     setAmount('')
     setNote('')
+    setOdometer('')
+    setLiters('')
+    // 不加满是例外，记完一笔就回到默认，免得下一次忘了勾回来
+    setFull(true)
     amountRef.current?.focus()
   }
 
@@ -95,6 +145,48 @@ export function EntryForm({ onAdd }: Props) {
             className="h-10 bg-card"
           />
         </div>
+      </div>
+
+      <div className="mt-3.5 flex flex-col gap-3.5 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+          <Label htmlFor="entry-odometer" className="font-mono text-xs text-muted-foreground">
+            总里程 km
+          </Label>
+          <Input
+            id="entry-odometer"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="选填"
+            value={odometer}
+            onChange={(e) => setOdometer(e.target.value)}
+            className="h-10 bg-card font-mono sm:w-[140px]"
+          />
+        </div>
+
+        <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+          <Label htmlFor="entry-liters" className="font-mono text-xs text-muted-foreground">
+            升数 L
+          </Label>
+          <Input
+            id="entry-liters"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="选填"
+            value={liters}
+            onChange={(e) => setLiters(e.target.value)}
+            className="h-10 bg-card font-mono sm:w-[120px]"
+          />
+        </div>
+
+        <label className="flex h-10 cursor-pointer items-center gap-2 font-mono text-[13px] text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={full}
+            onChange={(e) => setFull(e.target.checked)}
+            className="size-4 accent-primary"
+          />
+          加满
+        </label>
       </div>
 
       <div className="mt-3.5 flex items-center justify-between gap-3">

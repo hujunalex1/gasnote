@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { BackupPanel } from '@/components/BackupPanel.tsx'
+import { EconomyPanel } from '@/components/EconomyPanel.tsx'
 import { EntryForm } from '@/components/EntryForm.tsx'
 import { NoticeBanner } from '@/components/NoticeBanner.tsx'
 import { RecordList } from '@/components/RecordList.tsx'
@@ -21,7 +22,15 @@ import {
   type BackupMeta,
 } from '@/lib/fileBackup.ts'
 import { todayISO } from '@/lib/format.ts'
-import { allYears, monthKey, summaryCards, yearlySummary } from '@/lib/stats.ts'
+import {
+  allYears,
+  economySegments,
+  economySummary,
+  monthKey,
+  segmentPer100km,
+  summaryCards,
+  yearlySummary,
+} from '@/lib/stats.ts'
 import {
   decodeStored,
   load,
@@ -322,6 +331,11 @@ export function App() {
   const cards = summaryCards(records, year, now)
   const summary = yearlySummary(records, year)
   const years = allYears(records, currentYear)
+  const segments = economySegments(records)
+  // 按区间结束那次加满的日期归年，与「本年」卡跟随年份选择器的口径一致
+  const yearEconomy = economySummary(segments.filter((s) => s.endDate.startsWith(`${year}-`)))
+  const latestSegment = segments.length > 0 ? segments[segments.length - 1] : null
+  const per100kmById = new Map(segments.map((s) => [s.endId, segmentPer100km(s)]))
 
   // 自动备份正常工作时不该再唠叨，所以只在它不可用/没开/出问题时才算提醒。
   // 时间是每天才变一次的量，不值得进 useMemo。
@@ -381,8 +395,14 @@ export function App() {
             backupError={backupError}
             reminder={reminder}
           />
-          <EntryForm onAdd={handleAdd} />
+          <EntryForm records={records} onAdd={handleAdd} />
           <SummaryPanel cards={cards} year={year} />
+          <EconomyPanel
+            latest={latestSegment}
+            yearSummary={yearEconomy}
+            year={year}
+            isCurrentYear={cards.isCurrentYear}
+          />
           <SpendChart
             year={year}
             years={years}
@@ -391,7 +411,13 @@ export function App() {
             onYearChange={setYear}
             onMonthSelect={setMonth}
           />
-          <RecordList year={year} month={month} records={monthRecords} onDelete={handleDelete} />
+          <RecordList
+            year={year}
+            month={month}
+            records={monthRecords}
+            per100kmById={per100kmById}
+            onDelete={handleDelete}
+          />
         </main>
       </div>
 

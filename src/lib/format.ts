@@ -25,6 +25,58 @@ export function parseAmountInput(raw: unknown): AmountParseResult {
   return { ok: true, amount }
 }
 
+export type OptionalParseResult =
+  | { ok: true; value: number | undefined }
+  | { ok: false; error: string }
+
+const ODOMETER_RE = /^\d+$/
+
+/**
+ * 总里程输入框 → km 整数。选填：空串得到 undefined。
+ * 与金额同理，千分位、单位、小数一律拒绝——仪表盘上的总里程本来就是整数。
+ */
+export function parseOdometerInput(raw: unknown): OptionalParseResult {
+  const text = String(raw ?? '').trim()
+  if (text === '') return { ok: true, value: undefined }
+  if (!ODOMETER_RE.test(text)) {
+    return { ok: false, error: '总里程只能是整数公里，例如 12345' }
+  }
+  const value = Number(text)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    return { ok: false, error: '总里程必须大于 0' }
+  }
+  return { ok: true, value }
+}
+
+/** 升数输入框 → 升。选填：空串得到 undefined。规则与金额相同：最多两位小数。 */
+export function parseLitersInput(raw: unknown): OptionalParseResult {
+  const text = String(raw ?? '').trim()
+  if (text === '') return { ok: true, value: undefined }
+  if (!AMOUNT_RE.test(text)) {
+    return { ok: false, error: '升数只能是最多两位小数的数字，例如 45.20' }
+  }
+  const value = Number(text)
+  if (!Number.isFinite(value) || value <= 0) {
+    return { ok: false, error: '升数必须大于 0' }
+  }
+  return { ok: true, value }
+}
+
+/** 12345 → "12,345 km" */
+export function formatKm(km: number): string {
+  return `${String(Math.round(km)).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} km`
+}
+
+/** 45.2 → "45.20 L" */
+export function formatLiters(liters: number): string {
+  return `${(Math.round(liters * 100) / 100).toFixed(2)} L`
+}
+
+/** 7.834 → "7.8"。L/100km 保留一位小数已经足够，再多就是噪声。 */
+export function formatPer100km(value: number): string {
+  return value.toFixed(1)
+}
+
 /**
  * 金额 → 显示文本，带 ¥ 前缀与千分位，固定两位小数。
  * 全程走整数"分"，避免浮点误差漏到界面上。

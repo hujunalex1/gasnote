@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { monthKey, monthlyTotal, yearlySummary, allYears, barHeights, summaryCards } from '../src/lib/stats.ts';
+import {
+  monthKey, monthlyTotal, yearlySummary, allYears, barHeights, summaryCards,
+  economySegments, economySummary, odometerBounds, segmentPer100km,
+} from '../src/lib/stats.ts';
 
 const rec = (date, amount, id = date + amount) => ({ id, date, amount, note: '' });
 
@@ -170,4 +173,126 @@ test('summaryCards：无记录时全零，不产生 NaN', () => {
 test('summaryCards：本年平均金额走整数分，与项目不变量一致', () => {
   const records = [rec('2026-01-01', 100), rec('2026-01-02', 100), rec('2026-01-03', 100.01)];
   assert.equal(summaryCards(records, 2026, new Date(2026, 0, 5)).year.avg, 100);
+});
+
+// ---- 油耗 ----
+
+const fill = (date, odometer, liters, amount, extra = {}) => ({
+  id: `${date}-${odometer}`, date, amount, note: '', odometer, liters, ...extra,
+});
+
+test('economySegments：空数组 / 只有旧记录时没有区间', () => {
+  assert.deepEqual(economySegments([]), []);
+  assert.deepEqual(economySegments([rec('2026-10-01', 300), rec('2026-10-10', 300)]), []);
+});
+
+test('economySegments：第一次加满只是起点，第二次才出一段', () => {
+  const segs = economySegments([
+    fill('2026-10-01', 10000, 40, 300),
+    fill('2026-10-10', 10500, 38.5, 290.5),
+  ]);
+  assert.deepEqual(segs, [
+    { endId: '2026-10-10-10500', endDate: '2026-10-10', distance: 500, liters: 38.5, cost: 290.5 },
+  ]);
+});
+
+test('economySegments：中间没加满的升数和花费累加进下一段', () => {
+  const segs = economySegments([
+    fill('2026-10-01', 10000, 40, 300),
+    fill('2026-10-05', 10200, 10.1, 80.1, { full: false }),
+    fill('2026-10-10', 10600, 30.2, 230.2),
+  ]);
+  assert.equal(segs.length, 1);
+  assert.equal(segs[0].distance, 600);
+  assert.equal(segs[0].liters, 40.3);
+  assert.equal(segs[0].cost, 310.3);
+});
+
+test('economySegments：未加满且没填里程也照样累加', () => {
+  const segs = economySegments([
+    fill('2026-10-01', 10000, 40, 300),
+    fill('2026-10-05', undefined, 10, 80, { full: false }),
+    fill('2026-10-10', 10500, 30, 230),
+  ]);
+  assert.equal(segs[0].liters, 40);
+});
+
+test('economySegments：中间有一次没填升数，链条打断', () => {
+  const segs = economySegments([
+    fill('2026-10-01', 10000, 40, 300),
+    rec('2026-10-05', 80),
+    fill('2026-10-10', 10500, 30, 230),
+    fill('2026-10-20', 11000, 35, 260),
+  ]);
+  assert.deepEqual(segs.map((s) => s.endDate), ['2026-10-20']);
+  assert.equal(segs[0].distance, 500);
+});
+
+test('economySegments：加满但没填里程，链条打断', () => {
+  const segs = economySegments([
+    fill('2026-10-01', 10000, 40, 300),
+    fill('2026-10-05', undefined, 40, 300),
+    fill('2026-10-10', 10500, 30, 230),
+  ]);
+  assert.deepEqual(segs, []);
+});
+
+test('economySegments：里程倒退时不出一段，并以它为新起点', () => {
+  const segs = economySegments([
+    fill('2026-10-01', 10000, 40, 300),
+    fill('2026-10-05', 9000, 40, 300),
+    fill('2026-10-10', 9400, 30, 230),
+  ]);
+  assert.deepEqual(segs.map((s) => s.distance), [400]);
+});
+
+test('economySegments：录入顺序乱了也按日期、同日按里程排', () => {
+  const segs = economySegments([
+    fill('2026-10-10', 10600, 30, 230),
+    fill('2026-10-01', 10300, 20, 150),
+    fill('2026-10-01', 10000, 40, 300),
+  ]);
+  assert.deepEqual(segs.map((s) => s.distance), [300, 300]);
+});
+
+test('economySegments：升数累加没有浮点漂移', () => {
+  const records = [fill('2026-01-01', 1000, 40, 300)];
+  for (let i = 0; i < 10; i++) {
+    records.push(fill(`2026-01-${String(i + 2).padStart(2, '0')}`, undefined, 0.1, 0.1, { full: false }));
+  }
+  records.push(fill('2026-01-20', 1100, 0.2, 0.2));
+  assert.equal(economySegments(records)[0].liters, 1.2);
+});
+
+test('segmentPer100km：升数÷里程×100', () => {
+  assert.equal(segmentPer100km({ endId: 'a', endDate: '2026-10-01', distance: 500, liters: 38.5, cost: 0 }), 7.7);
+});
+
+test('economySummary：没有区间时油耗为 null，不是 NaN', () => {
+  const s = economySummary([]);
+  assert.equal(s.per100km, null);
+  assert.equal(s.costPerKm, null);
+});
+
+test('economySummary：按总升数÷总里程加权，而不是各段平均', () => {
+  const s = economySummary([
+    { endId: 'a', endDate: '2026-10-01', distance: 100, liters: 10, cost: 80 },
+    { endId: 'b', endDate: '2026-10-10', distance: 900, liters: 60, cost: 480 },
+  ]);
+  assert.equal(s.distance, 1000);
+  assert.equal(s.per100km, 7);
+  assert.equal(s.costPerKm, 0.56);
+});
+
+test('odometerBounds：只看其他日期，没有约束的一侧为 null', () => {
+  const records = [
+    fill('2026-10-01', 10000, 40, 300),
+    fill('2026-10-10', 10500, 40, 300),
+    fill('2026-10-20', 11000, 40, 300),
+    rec('2026-10-15', 100),
+  ];
+  assert.deepEqual(odometerBounds(records, '2026-10-15'), { min: 10500, max: 11000 });
+  assert.deepEqual(odometerBounds(records, '2026-10-10'), { min: 10000, max: 11000 });
+  assert.deepEqual(odometerBounds(records, '2026-09-01'), { min: null, max: 10000 });
+  assert.deepEqual(odometerBounds([], '2026-10-01'), { min: null, max: null });
 });

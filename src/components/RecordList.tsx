@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.tsx'
-import { formatMoney } from '@/lib/format.ts'
+import { formatKm, formatLiters, formatMoney, formatPer100km } from '@/lib/format.ts'
 import type { FuelRecord } from '@/lib/types.ts'
 
 type Props = {
@@ -8,10 +8,12 @@ type Props = {
   month: number
   /** 已按「日期降序、同日新录入在前」排好的当月记录 */
   records: FuelRecord[]
+  /** 结束了某一段的那几次加满 → 该段油耗。没有的记录不显示油耗 */
+  per100kmById: Map<string, number>
   onDelete: (id: string) => void
 }
 
-export function RecordList({ year, month, records, onDelete }: Props) {
+export function RecordList({ year, month, records, per100kmById, onDelete }: Props) {
   // 只允许一行处于「确认删除」态，点别处或点否都会退回
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
@@ -27,6 +29,14 @@ export function RecordList({ year, month, records, onDelete }: Props) {
         <ul className="m-0 list-none p-0">
           {records.map((record) => {
             const confirming = confirmingId === record.id
+            const per100km = per100kmById.get(record.id)
+            const details = [
+              record.odometer !== undefined ? formatKm(record.odometer) : null,
+              record.liters !== undefined
+                ? `${formatLiters(record.liters)}${record.full === false ? '（未加满）' : ''}`
+                : null,
+              per100km !== undefined ? `${formatPer100km(per100km)} L/100km` : null,
+            ].filter((part) => part !== null)
             return (
               <li
                 key={record.id}
@@ -35,12 +45,21 @@ export function RecordList({ year, month, records, onDelete }: Props) {
                 <span className="w-12 shrink-0 font-mono text-[12px] text-muted-foreground">
                   {record.date.slice(5)}
                 </span>
-                <span className="font-mono font-semibold">{formatMoney(record.amount)}</span>
-                {record.note ? (
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-                    {record.note}
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-baseline gap-3">
+                    <span className="font-mono font-semibold">{formatMoney(record.amount)}</span>
+                    {record.note ? (
+                      <span className="min-w-0 truncate text-[13px] text-muted-foreground">
+                        {record.note}
+                      </span>
+                    ) : null}
                   </span>
-                ) : null}
+                  {details.length > 0 ? (
+                    <span className="block truncate font-mono text-[12px] text-muted-foreground">
+                      {details.join(' · ')}
+                    </span>
+                  ) : null}
+                </span>
 
                 <span className="ml-auto flex items-center gap-1.5">
                   {confirming ? (

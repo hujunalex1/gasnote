@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAmountInput, formatMoney, toISODate, fromISODate, todayISO, isValidDate } from '../src/lib/format.ts';
+import {
+  parseAmountInput, formatMoney, toISODate, fromISODate, todayISO, isValidDate,
+  parseOdometerInput, parseLitersInput, formatKm, formatLiters, formatPer100km,
+} from '../src/lib/format.ts';
 
 test('接受整数金额', () => {
   assert.deepEqual(parseAmountInput('320'), { ok: true, amount: 320 });
@@ -166,4 +169,43 @@ test('fromISODate：非法输入返回 undefined 而不是 Invalid Date', () => 
   assert.equal(fromISODate('abc'), undefined);
   assert.equal(fromISODate(''), undefined);
   assert.equal(fromISODate(null), undefined);
+});
+
+// ---- 总里程 / 升数 ----
+
+test('总里程：空串表示没填，合法', () => {
+  assert.deepEqual(parseOdometerInput(''), { ok: true, value: undefined });
+  assert.deepEqual(parseOdometerInput('   '), { ok: true, value: undefined });
+});
+
+test('总里程：接受整数', () => {
+  assert.deepEqual(parseOdometerInput(' 12345 '), { ok: true, value: 12345 });
+});
+
+test('总里程：小数、千分位、单位、零一律拒绝', () => {
+  for (const bad of ['12345.5', '12,345', '12345km', '0', '-1', '１２３']) {
+    assert.equal(parseOdometerInput(bad).ok, false, bad);
+  }
+});
+
+test('升数：空串表示没填，合法', () => {
+  assert.deepEqual(parseLitersInput(''), { ok: true, value: undefined });
+});
+
+test('升数：接受最多两位小数', () => {
+  assert.deepEqual(parseLitersInput('45.2'), { ok: true, value: 45.2 });
+  assert.deepEqual(parseLitersInput('45.20'), { ok: true, value: 45.2 });
+});
+
+test('升数：三位小数、带单位、零被拒绝', () => {
+  for (const bad of ['45.201', '45L', '0', '0.00']) {
+    assert.equal(parseLitersInput(bad).ok, false, bad);
+  }
+});
+
+test('formatKm / formatLiters / formatPer100km', () => {
+  assert.equal(formatKm(12345), '12,345 km');
+  assert.equal(formatKm(500), '500 km');
+  assert.equal(formatLiters(45.2), '45.20 L');
+  assert.equal(formatPer100km(7.849), '7.8');
 });

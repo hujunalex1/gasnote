@@ -278,3 +278,41 @@ test('save：往返后金额与备注保持一致', () => {
   const back = load(storage).records;
   assert.deepEqual(back, records);
 });
+
+// ---- 油耗字段 ----
+
+test('normalizeRecords：旧记录没有油耗字段，规整后也不会多出这些键', () => {
+  const r = normalizeRecords([good()]);
+  assert.deepEqual(Object.keys(r.records[0]).sort(), ['amount', 'date', 'id', 'note']);
+});
+
+test('normalizeRecords：带油耗字段的记录原样保留，升数归整到两位', () => {
+  const r = normalizeRecords([good({ odometer: 12345, liters: 45.204, full: false })]);
+  assert.equal(r.ok, true);
+  assert.equal(r.records[0].odometer, 12345);
+  assert.equal(r.records[0].liters, 45.2);
+  assert.equal(r.records[0].full, false);
+});
+
+test('normalizeRecords：null 视同没填', () => {
+  const r = normalizeRecords([good({ odometer: null, liters: null, full: null })]);
+  assert.equal(r.ok, true);
+  assert.equal('odometer' in r.records[0], false);
+});
+
+test('normalizeRecords：油耗字段写了但不合法时整体拒绝', () => {
+  for (const bad of [
+    { odometer: 12345.5 }, { odometer: 0 }, { odometer: '12345' },
+    { liters: 0 }, { liters: -1 }, { liters: '45' }, { liters: NaN },
+    { full: 'yes' }, { full: 1 },
+  ]) {
+    assert.equal(normalizeRecords([good(bad)]).ok, false, JSON.stringify(bad));
+  }
+});
+
+test('parseImport：带油耗字段的记录往返一致', () => {
+  const original = [good({ odometer: 12345, liters: 45.2, full: true })];
+  const r = parseImport(serialize(original));
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.records, original);
+});
