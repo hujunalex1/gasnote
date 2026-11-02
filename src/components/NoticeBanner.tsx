@@ -5,18 +5,18 @@ type Props = {
   notice: Notice | null
   /** 落盘失败时的错误信息；优先级高于 notice，因为它意味着刚刚的写入没成功 */
   saveError: string | null
-  /** 自动备份写盘失败。和 saveError 同级严重：两者都意味着"你以为存住了，其实没有" */
-  backupError?: string | null
+  /** 云端同步失败。和 saveError 同级严重：两者都意味着"你以为存住了，其实没有" */
+  syncError?: string | null
   /** 长期没拿到数据副本时的提醒。最不紧急，排最后 */
   reminder?: string | null
 }
 
-const CORRUPT_TAIL = `原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。自动备份（如已开启）在本次会话中暂停，不会用空列表覆盖磁盘上已有的备份。注意：「导出」导出的是当前列表，不包含这份副本。`
+const CORRUPT_TAIL = `原始副本已原样保留在 localStorage 的 ${CORRUPT_KEY} 键下，没有被删除。云端同步在本次会话中暂停上传，不会用空列表覆盖云端已有的数据。注意：「导出」导出的是当前列表，不包含这份副本。`
 
 export function NoticeBanner({
   notice,
   saveError,
-  backupError = null,
+  syncError = null,
   reminder = null,
 }: Props) {
   let text: string | null = null
@@ -25,8 +25,8 @@ export function NoticeBanner({
   if (saveError) {
     text = saveError
     severe = true
-  } else if (backupError) {
-    text = backupError
+  } else if (syncError) {
+    text = syncError
     severe = true
   } else if (notice?.kind === 'storage-unavailable') {
     text = '浏览器不允许保存数据（可能是无痕模式）。本次记录只在当前页面有效，刷新即丢。请点右上角「备份」→「导出」保存。'

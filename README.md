@@ -1,6 +1,7 @@
 # 加油记账
 
-记录每次加油金额、按月/按年统计，可选记录里程和升数算油耗。单用户单设备，数据存在你自己的浏览器里。
+记录每次加油金额、按月/按年统计，可选记录里程和升数算油耗。单用户单账本，数据存在你自己的浏览器里，
+并同步一份到你自己的 Supabase。
 
 **技术栈：** Vite + React 19 + TypeScript + Tailwind v4 + shadcn/ui（`base-nova` 风格）
 
@@ -16,10 +17,42 @@ npm run dev
 ## 其他命令
 
 ```bash
-npm test         # 140 个单元测试
+npm test         # 158 个单元测试
 npm run build    # 产出静态 dist/，丢到任何静态托管都能跑
 npm run preview  # 本地预览构建产物
 ```
+
+## 接上 Supabase（一次性配置）
+
+1. 在 <https://supabase.com> 新建一个项目，免费档够用。
+2. 打开 **SQL Editor** → New query，把 `supabase/migrations/20261102120000_gasnote_init.sql` 整个粘进去，点 **Run**。
+   它建两张表（`gasnote_records` / `gasnote_sync`）、开 RLS、装两个 RPC 函数。重复执行也安全。
+   跑完显示 `Success. No rows returned` 是正常的——这些语句本来就不返回行。
+3. **Authentication → Sign In / Providers → Email** 默认就是开的。托管项目默认要求邮箱确认，
+   注册后要去邮箱点一下链接（点完跳去哪一页都无所谓，回来用邮箱密码登录即可）。
+   嫌麻烦可以在同页把 **Confirm email** 关掉；免费项目的邮件服务还有频率限制，开着它容易踩限流。
+4. **Settings → API Keys**，抄下 **Project URL** 和 **publishable key**（`sb_publishable_…`；老项目里叫
+   `anon` key，`eyJ` 开头，也照样能用），在项目根目录建 `.env.local`（可以直接照抄 `.env.example`）：
+
+   ```
+   VITE_SUPABASE_URL=https://xxxx.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+   ```
+
+5. `npm run dev`，点右上角「备份」→ 填邮箱密码 →「注册」→ 再登录。
+   第一次同步时，云端为空就把本机已有的记录整份传上去。
+
+以前自动备份到 iCloud 目录里的那些 `gasnote-YYYY-MM-DD.json` 不用转换，挑最新的一份
+「备份」→「导入」即可，内容和「导出」完全一致。
+
+`publishable key` 会被打进前端产物，这是 Supabase 的常规做法：**安全性不靠藏这个 key，靠 RLS**。
+所以第 2 步的 SQL 必须先于上线执行——没有它，拿到 key 的人只能看到错误；有了它，
+拿到 key 也只能读到 `user_id` 等于他自己 uid 的行。**千万别把 `sb_secret_…` 或 `service_role`
+填进来**，那个绕过 RLS，放进前端等于把库交给所有人。
+
+**部署到 Cloudflare Workers 时**：`VITE_*` 是**构建期**变量，必须在跑 `npm run build` 时就能读到。
+在 Workers 项目 → Settings → Variables and Secrets 里加这两个变量（Build variables）。
+只配成运行时变量不管用——它们早就被 Vite 内联进 JS 了。
 
 ## 怎么用
 
@@ -47,32 +80,37 @@ npm run preview  # 本地预览构建产物
 
 ## 数据存在哪
 
-浏览器 localStorage，key 为 `gasnote.records.v1`，只在你当前这台机器的这个浏览器里。
+**本机（主存储）**：浏览器 localStorage，key 为 `gasnote.records.v1`。打开页面立刻有数据，断网也能照常记账。
 
-**换浏览器、清缓存、换电脑都会丢。** 另外 localStorage 按「源」隔离：`localhost:5173` 和线上域名
-是两套互不相干的数据，换地址看到空列表不是数据丢了，是它在另一个源里。
+**云端（第二份副本）**：你自己的 Supabase，一条记录一行，存在 `gasnote_records` 表里。
+每行带 `user_id`，行级安全策略（RLS）只放行 `auth.uid()` 等于该列的行——anon key 是公开的，
+别人拿到它读不到你的账。
 
-**自动备份（把副本写到磁盘）**
+**同步规则**（全在 `src/lib/sync.ts` 的 `decideSync` 里，有单测钉着）：
 
-点右上角「备份」→「选择备份文件夹」授权一个目录，之后每次改动 2 秒后会自动把当天那份
-快照写进去，文件名 `gasnote-YYYY-MM-DD.json`，**内容与「导出」完全一致**，可直接用「导入」恢复。
-保留最近 14 份，更早的自动删除，且**只删严格符合这个命名格式的文件**——目录里的照片、
-`.DS_Store`、你手改过名字的备份一律不碰。把目录选在 iCloud Drive 里，就等于顺带存到了云上
-（上传由 iCloud 客户端负责）。关掉自动备份**不会**删除磁盘上已有的备份。
+- 每次改动 **2 秒后**自动整份推送：先删掉云端多出来的行，再 upsert 现在的所有行，最后 `revision + 1`。
+  推送是幂等的，重复推不会产生重复记录。
+- 打开页面时先拉一次云端。本机没有未上传的改动、而云端 revision 变了（多半是另一台设备改的）
+  → 用云端覆盖本机；本机有改动、云端没动 → 推上去。
+- **两边都改过 → 不自动选边。**「备份」面板里会出现「用云端覆盖本机」和「把本机推上去」两个按钮，
+  你选哪个就是哪个。自动选一边等于静默丢掉另一边。
+- 本机数据读不出来（损坏、无痕模式）时，整个会话**暂停上传**，绝不会用空列表把云端清空。
+  这时拉取仍然可用——那反而是把数据救回来的路。
+- 裁决是**整份覆盖**（last-write-wins），不是逐条合并。两台设备同时离线改账，后覆盖的那份赢。
+  单用户单账本场景下这是刻意留的简单取舍。
 
-**这个功能只在桌面版 Chrome / Edge 里可用。** 它依赖 File System Access API，MDN 标注为
-[not Baseline](https://developer.mozilla.org/en-US/docs/Web/API/Window/showSaveFilePicker)，
-Safari、Firefox、iPhone 都不支持。在不支持的浏览器上按钮里会直接说明，并改为在超过 14 天
-没拿到数据副本时于页面顶部提醒。另外浏览器重启后权限偶尔会退回「需要确认」，此时按钮显示
-「备份 !」，点开后点「恢复自动备份」即可——**它不是 100% 无感**。
+**换浏览器、换电脑、换手机**：登录同一个账号就能看到全部记录。
+但 localStorage 按「源」隔离：`localhost:5173` 和线上域名是两套互不相干的本机数据，
+在某个源里第一次登录时，如果本机和云端都有记录，会先问你要哪一边。
 
 **手动备份**
 
 - 定期点右上角「备份」→「导出」，会下载一个 `gasnote-backup-YYYY-MM-DD.json`。
 - 需要恢复时点「备份」→「导入」选择那个文件即可。
+- 云端挂了、账号丢了、想搬到别的工具，都还能靠这个 JSON。它和云端同步是两条独立的路。
 
-浏览器不允许保存数据时（比如无痕模式），页面顶部会出现黄色横幅，此时记录只在当前页面有效，
-刷新即丢，请立刻导出。
+两个提醒：浏览器不允许保存数据时（比如无痕模式），页面顶部会出现黄色横幅，此时记录只在当前页面有效，
+刷新即丢，请立刻导出。另外，超过 14 天没拿到任何副本（既没同步成功、也没导出过）会在页面顶部提醒。
 
 导入是「替换」而不是「合并」：会先用文件里的记录**整体替换**现有记录。导入前会弹确认框，
 且**只有整个文件校验通过才会写入**。文件有任何一条记录不合法，你的现有数据都不会被改动。
@@ -81,6 +119,7 @@ Safari、Firefox、iPhone 都不支持。在不支持的浏览器上按钮里会
 
 如果 localStorage 里躺着本工具读不懂的数据（比如更新版本写入的），工具**不会**把它扔掉，
 而是把原文备份到 `gasnote.records.v1.corrupt` 这个 key，并以空列表启动，同时在页面顶部用红色横幅告知。
+本次会话的云端上传会暂停，避免用空列表覆盖云端；已登录的话，启动时的拉取会把云端那份取回来。
 
 注意：点「导出」导出的是当前列表，**不包含**这份副本。
 
@@ -93,14 +132,14 @@ src/
 │   ├── stats.ts       统计纯函数（可单测）
 │   ├── store.ts       持久化与导入校验（storage 是注入的，可单测）
 │   ├── storage.ts     存储降级（无痕模式 → 内存）
-│   ├── backup.ts      备份文件名 / 该删哪些 / 该不该提醒（可单测）
-│   ├── fileBackup.ts  文件系统与 IndexedDB 的薄适配层（不写单测）
+│   ├── sync.ts        同步决策与元信息（可单测）
+│   ├── cloud.ts       Supabase 与登录态的薄适配层（不写单测）
 │   ├── theme.ts       深浅色主题
 │   └── types.ts       共享类型
 ├── components/    界面
 │   └── ui/        shadcn 生成的组件源码（归你所有，可随意改）
-└── fs-access.d.ts 补 TypeScript 尚未覆盖的 File System Access 成员
-test/              140 个单元测试（与 src/ 平级）
+supabase/migrations/  建表 SQL（在 Supabase SQL Editor 里跑一次）
+test/              158 个单元测试（与 src/ 平级）
 ```
 
 逻辑层刻意不依赖 React 也不碰 DOM，所以可以直接用 **Node 内置测试运行器**跑 ——
@@ -115,13 +154,21 @@ npm test
 但仍未补上）。改动界面后请手动在浏览器里走一遍：
 
 记一笔 → 跨月记账 → 切月份 → 切年份 → 删除 → 导出 → 导入一个损坏文件确认数据没被破坏
-→ 开启自动备份，确认目录里出现了文件、且目录里原有的无关文件没被删掉。
+→ 登录，确认 Supabase 的 `gasnote_records` 表里出现了记录、`gasnote_sync.revision` 加了一
+→ 在 Supabase 控制台里手改一行，回来点「立即同步」，确认冲突提示出现，两个选项各试一次
+→ 退出登录后再记一笔，确认「备份 !」和顶部提醒都出现，重新登录后改动会自动补传。
 
 ## 已知取舍
 
-- **打包产物 JS 507KB（gzip 165KB）**。这笔账最早是 React + Base UI（392KB），
+- **打包产物 JS 522KB（gzip 170KB）**。这笔账最早是 React + Base UI（392KB），
   后来为了换掉原生日期选择器又引入 `date-fns` 与 `react-day-picker`，涨到 500KB 上下。
   对一个小工具来说是偏重的。前一个零构建原生版本是 0KB，已打 tag `v1-zero-build` 存档。
+  `@supabase/supabase-js`（214KB / gzip 55KB）单独成一个 chunk，用动态 import 加载——
+  没配 Supabase 的人完全不会下载它。
+- **同步是整份覆盖，不是逐条合并**。两台设备同时离线改账，后覆盖的那份赢。单用户单账本够用，
+  真要多人协作得换设计。
+- **没有实时订阅**。另一台设备改完，这边要等下一次拉取（刷新页面或点「立即同步」）才看到。
+  接 Realtime 也能做，但那会让一个记账工具常驻一条 WebSocket，不划算。
 - `src/components/ui/*` 是 shadcn **复制进仓库的源码**，不是 npm 依赖。
   升级用 `npx shadcn@latest add <name> --overwrite` 重新拉取——但本仓库对它们做过
   **两处刻意改动，重拉后必须重新应用**，否则会静默退化：

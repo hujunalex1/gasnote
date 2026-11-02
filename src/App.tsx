@@ -1,26 +1,23 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { BackupPanel } from '@/components/BackupPanel.tsx'
 import { EconomyPanel } from '@/components/EconomyPanel.tsx'
 import { EntryForm } from '@/components/EntryForm.tsx'
 import { NoticeBanner } from '@/components/NoticeBanner.tsx'
 import { RecordList } from '@/components/RecordList.tsx'
 import { SpendChart } from '@/components/SpendChart.tsx'
 import { SummaryPanel } from '@/components/SummaryPanel.tsx'
+import { SyncPanel, type SyncStatus } from '@/components/SyncPanel.tsx'
 import { ThemeToggle } from '@/components/ThemeToggle.tsx'
-import { DAY_MS, shouldRemindExport } from '@/lib/backup.ts'
 import {
-  clearDirectoryHandle,
-  describeBackupError,
-  hasWritePermission,
-  isBackupSupported,
-  loadDirectoryHandle,
-  pickBackupDirectory,
-  readBackupMeta,
-  runBackup,
-  saveDirectoryHandle,
-  writeBackupMeta,
-  type BackupMeta,
-} from '@/lib/fileBackup.ts'
+  getSignedInEmail,
+  isCloudConfigured,
+  onAuthChange,
+  pullCloud,
+  pushCloud,
+  signIn,
+  signOut,
+  signUp,
+  type CloudSnapshot,
+} from '@/lib/cloud.ts'
 import { todayISO } from '@/lib/format.ts'
 import {
   allYears,
@@ -43,6 +40,18 @@ import {
 } from '@/lib/store.ts'
 import { resolveStorage } from '@/lib/storage.ts'
 import {
+  DAY_MS,
+  decideSync,
+  markDirty,
+  markSynced,
+  readLastCopied,
+  readSyncMeta,
+  shouldRemindBackup,
+  writeLastCopied,
+  writeSyncMeta,
+  type SyncMeta,
+} from '@/lib/sync.ts'
+import {
   applyThemeClass,
   readSavedTheme,
   saveTheme,
@@ -52,6 +61,9 @@ import {
 import type { FuelRecord } from '@/lib/types.ts'
 
 type Boot = { storage: StorageLike; records: FuelRecord[]; notice: Notice | null }
+
+/** 登录/注册的结果。错误已经翻成人话，面板直接显示。 */
+type AuthResult = { ok: true; info?: string } | { ok: false; error: string }
 
 /** 只在首次渲染跑一次：解析存储、读回数据、定下初始提示。 */
 function boot(): Boot {
@@ -80,26 +92,33 @@ export function App() {
   const [isDark, setIsDark] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // ---- 自动备份：localStorage 仍是主存储，备份只是单向落盘 ----
-  const [backupSupported] = useState(isBackupSupported)
-  const [backupMeta, setBackupMeta] = useState<BackupMeta>(() => readBackupMeta(storage))
-  const [needsPermission, setNeedsPermission] = useState(false)
-  const [backupError, setBackupError] = useState<string | null>(null)
+  // ---- 云同步：localStorage 仍是主存储，Supabase 是那份「反正不会丢」的副本 ----
+  const [cloudEnabled] = useState(isCloudConfigured)
+  const [email, setEmail] = useState<string | null>(null)
+  const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(() => readSyncMeta(storage))
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(cloudEnabled ? 'syncing' : 'signed-out')
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [lastCopiedAt, setLastCopiedAt] = useState<number | null>(() => readLastCopied(storage))
+
   /**
    * 启动时没读到真实数据（损坏，或存储不可用退到了内存），此刻的 records 是一个
-   * 「被迫为空」的列表，不是用户的数据。这时写盘会用空列表覆盖当天那份真实快照，
-   * 连续几天不处理还会让 14 份滚动保留把有效备份全部挤掉。所以整个会话都不写。
+   * 「被迫为空」的列表，不是用户的数据。这时推送会把云端那份真实的记录整份清空，
+   * 所以整个会话都不上传（拉取仍然允许——那反而是把数据救回来的路）。
    * notice 只在启动时定一次，之后不会变，用它判断就够了。
    */
-  const backupSuspended = notice !== null
-  /** 目录句柄本身存在 IndexedDB 里，这里只是内存中的当前引用 */
-  const backupHandleRef = useRef<FileSystemDirectoryHandle | null>(null)
-  /** 定时器回调读它，避免拿到过期的 records */
+  const syncSuspended = notice !== null
+
+  /** 定时器和异步回调读这些 ref，避免拿到过期闭包里的值 */
   const recordsRef = useRef(records)
   recordsRef.current = records
-  /** 同上：连续更新元信息时不互相覆盖 */
-  const metaRef = useRef(backupMeta)
-  metaRef.current = backupMeta
+  const metaRef = useRef(syncMeta)
+  metaRef.current = syncMeta
+  const emailRef = useRef(email)
+  emailRef.current = email
+  /** 同一时刻只跑一轮同步，否则两次推送会互相覆盖 revision */
+  const syncBusyRef = useRef(false)
+  /** 刚从云端接管了数据，接下来的防抖回调不用再白拉一次 */
+  const skipAutoSyncRef = useRef(false)
 
   // 主题：首屏类名已由 index.html 的内联脚本挂好，这里只同步 React 状态
   useEffect(() => {
@@ -120,86 +139,191 @@ export function App() {
   }, [storage])
 
   /**
-   * 更新并持久化备份元信息。
+   * 更新并持久化同步元信息。
    *
    * 副作用刻意放在 setState 的 updater 之外：updater 在 StrictMode 下会被调用两次，
    * 在里面写盘就会重复写。这里先更新 ref，保证同一 tick 内连续调用不会互相覆盖。
    */
-  function updateMeta(patch: Partial<BackupMeta>): void {
-    const next = { ...metaRef.current, ...patch }
+  function updateMeta(next: SyncMeta | null): void {
     metaRef.current = next
-    setBackupMeta(next)
-    writeBackupMeta(storage, next)
+    setSyncMeta(next)
+    writeSyncMeta(storage, next)
+  }
+
+  function failSync(message: string): void {
+    setSyncError(message)
+    setSyncStatus('error')
+  }
+
+  /** 云端那份成为权威副本：替换本机数据。 */
+  function adoptRemote(who: string, meta: SyncMeta | null, remote: CloudSnapshot): void {
+    setRecords(remote.records)
+    skipAutoSyncRef.current = true
+    const saved = save(storage, remote.records)
+    setSaveError(saved.ok ? null : saved.error)
+    updateMeta(markSynced(meta, who, remote.revision, Date.now()))
+    setSyncError(null)
+    setSyncStatus('synced')
+  }
+
+  /** 把本机这份整份推上去。 */
+  async function pushLocal(who: string, meta: SyncMeta | null): Promise<void> {
+    if (syncSuspended) {
+      // 用户亲手点的要说清楚为什么没传；自动触发的也会走到这里，只是一句提示
+      setSyncStatus('pending')
+      setSyncError(
+        '本地数据没有正常读出，已暂停上传，以免用空列表覆盖云端。请先用「备份」→「导入」从备份恢复。',
+      )
+      return
+    }
+    const pushed = await pushCloud(recordsRef.current)
+    if (!pushed.ok) {
+      failSync(pushed.error)
+      return
+    }
+    updateMeta(markSynced(meta, who, pushed.value, Date.now()))
+    setSyncError(null)
+    setSyncStatus('synced')
   }
 
   /**
-   * 跑一次备份。
+   * 跑一轮同步。
    *
-   * request=false 时只查询权限、不弹窗，所以挂在定时器和挂载流程里是安全的；
-   * request=true 只能在用户点击的调用栈里用——浏览器要求申请权限必须来自手势。
+   * 默认先拉一次再决策：只有几百条记录，一次请求换来「云端到底有什么」的确切答案，
+   * 比拿时间戳去猜可靠得多。force 用于冲突时用户手动选边。
    */
-  async function backupNow(request: boolean): Promise<void> {
-    const handle = backupHandleRef.current
-    if (!handle) return
-    if (backupSuspended) {
-      // 自动触发的静默跳过；用户亲手点的要说清楚为什么没写
-      if (request) {
-        setBackupError(
-          '本地数据没有正常读出，自动备份已暂停，以免用空列表覆盖磁盘上已有的备份。请先用「备份」→「导入」从备份恢复。',
-        )
-      }
+  async function runSync(force?: 'push' | 'pull'): Promise<void> {
+    if (!cloudEnabled) return
+    const who = emailRef.current
+    if (who === null) {
+      setSyncStatus('signed-out')
       return
     }
-    setBackupError(null)
+    if (syncBusyRef.current) return
+    syncBusyRef.current = true
+    setSyncStatus('syncing')
+    setSyncError(null)
+
     try {
-      if (!(await hasWritePermission(handle, request))) {
-        setNeedsPermission(true)
+      // 换过账号：旧账号的 revision 绝不能拿来用，否则会把别人的版本号当自己的
+      let meta = metaRef.current
+      if (meta !== null && meta.email !== null && meta.email !== who) {
+        updateMeta(null)
+        meta = null
+      }
+
+      if (force === 'push') {
+        await pushLocal(who, meta)
         return
       }
-      setNeedsPermission(false)
-      const outcome = await runBackup(handle, todayISO(), serialize(recordsRef.current))
-      if (!outcome.ok) {
-        if (outcome.reason === 'no-permission') setNeedsPermission(true)
-        else setBackupError(describeBackupError(outcome.error))
+
+      const pulled = await pullCloud()
+      if (!pulled.ok) {
+        failSync(pulled.error)
         return
       }
-      updateMeta({ lastCopiedAt: Date.now() })
-    } catch (error) {
-      setBackupError(describeBackupError(error))
+      const remote = pulled.value
+
+      if (force === 'pull') {
+        adoptRemote(who, meta, remote)
+        return
+      }
+
+      const action = decideSync({
+        meta,
+        localCount: recordsRef.current.length,
+        remoteCount: remote.records.length,
+        remoteRevision: remote.revision,
+      })
+
+      if (action === 'nothing') {
+        updateMeta(markSynced(meta, who, remote.revision, Date.now()))
+        setSyncStatus('synced')
+        return
+      }
+
+      if (action === 'pull') {
+        adoptRemote(who, meta, remote)
+        return
+      }
+
+      if (action === 'conflict') {
+        // 两边都可能带着对方没有的改动，自动选边就是静默丢数据。交给用户点。
+        // 同时把话写进横幅：只改按钮文字的话，用户不看顶栏就永远不知道有这回事。
+        setSyncStatus('conflict')
+        setSyncError('云端和本机都改过，需要你在「备份」面板里选一边。')
+        return
+      }
+
+      await pushLocal(who, meta)
+    } finally {
+      syncBusyRef.current = false
     }
   }
 
-  async function handleEnableBackup(): Promise<void> {
-    try {
-      const dir = await pickBackupDirectory()
-      if (!dir) return // 用户取消，不是错误
-      if (!(await hasWritePermission(dir, true))) {
-        setBackupError('没有拿到备份目录的写入权限，自动备份没有开启。')
-        return
-      }
-      await saveDirectoryHandle(dir)
-      backupHandleRef.current = dir
-      setBackupError(null)
-      setNeedsPermission(false)
-      updateMeta({ dirName: dir.name })
-      // 立刻写一份，别让用户等到下次改动才看见效果
-      await backupNow(false)
-    } catch (error) {
-      setBackupError(describeBackupError(error))
+  /** 首次登录/注册成功后接管：建立归属，然后立刻同步一轮。 */
+  async function finishAuth(who: string): Promise<void> {
+    const previous = metaRef.current
+    if (previous !== null && previous.email !== null && previous.email !== who) {
+      updateMeta(null)
+    }
+    emailRef.current = who
+    setEmail(who)
+    await runSync()
+  }
+
+  async function handleSignIn(address: string, password: string): Promise<AuthResult> {
+    const result = await signIn(address, password)
+    if (!result.ok) return result
+    await finishAuth(address)
+    return { ok: true }
+  }
+
+  async function handleSignUp(address: string, password: string): Promise<AuthResult> {
+    const created = await signUp(address, password)
+    if (!created.ok) return created
+    if (created.value.needsConfirm) {
+      return { ok: true, info: '注册成功。请去邮箱点确认链接，确认后回来登录。' }
+    }
+    await finishAuth(address)
+    return { ok: true, info: '注册成功，已登录。' }
+  }
+
+  async function handleSignOut(): Promise<void> {
+    await signOut()
+    emailRef.current = null
+    setEmail(null)
+    setSyncError(null)
+    setSyncStatus('signed-out')
+  }
+
+  /** 本机有了改动：落盘 + 标记待上传。 */
+  function markLocalChange(): void {
+    const meta = metaRef.current
+    if (meta !== null) updateMeta(markDirty(meta))
+    if (emailRef.current !== null) {
+      setSyncStatus((previous) => (previous === 'conflict' ? previous : 'pending'))
     }
   }
 
-  async function handleDisableBackup(): Promise<void> {
-    try {
-      await clearDirectoryHandle()
-    } catch {
-      /* 句柄清不掉不该卡住"关闭"这个动作 */
-    }
-    backupHandleRef.current = null
-    setNeedsPermission(false)
-    setBackupError(null)
-    // 只断开连接，不删磁盘上已经写好的备份——那是用户的文件，删了不可逆
-    updateMeta({ dirName: null })
+  /**
+   * 落盘并把结果如实反映到横幅上。把错误一并返回，是因为调用方往往要在同一次
+   * 事件里做决定（比如导入后该说「成功」还是「导入成功但没存住」），
+   * 而 saveError 这个 state 要到下一次渲染才更新，读到的会是旧值。
+   */
+  function persist(next: FuelRecord[]): { ok: boolean; error: string | null } {
+    const result = save(storage, next)
+    const error = result.ok ? null : result.error
+    setSaveError(error)
+    return { ok: result.ok, error }
+  }
+
+  /** 用户改动：立刻写 localStorage（刷新不丢），云端交给 2 秒后的防抖推送。 */
+  function applyLocal(next: FuelRecord[]): { ok: boolean; error: string | null } {
+    setRecords(next)
+    const saved = persist(next)
+    markLocalChange()
+    return saved
   }
 
   // 别的标签页写了数据就跟着换成那份。否则这边再记一笔时会拿自己手里的旧列表
@@ -209,50 +333,68 @@ export function App() {
     const onStorage = (event: StorageEvent) => {
       if (event.key !== STORAGE_KEY) return
       const decoded = decodeStored(event.newValue)
-      if (decoded.status === 'ok' || decoded.status === 'empty') setRecords(decoded.records)
+      if (decoded.status !== 'ok' && decoded.status !== 'empty') return
+      setRecords(decoded.records)
+      // 另一个标签页刚改过，云端还没有；新一轮推送是幂等的，多推一次无害
+      markLocalChange()
     }
     globalThis.addEventListener?.('storage', onStorage)
     return () => globalThis.removeEventListener?.('storage', onStorage)
   }, [])
 
-  // 启动时恢复备份目录。只查询权限、绝不申请：申请必须来自用户手势，
-  // 在挂载流程里调用会被浏览器直接拒绝。
+  // 启动时恢复登录态并同步一轮。只读会话、不弹窗，所以放在挂载流程里是安全的。
   useEffect(() => {
-    if (!backupSupported) return
+    if (!cloudEnabled) return
     let cancelled = false
+    let unsubscribe: (() => void) | null = null
+
     void (async () => {
-      const handle = await loadDirectoryHandle()
-      if (!handle || cancelled) return
-      backupHandleRef.current = handle
-      const granted = await hasWritePermission(handle, false)
+      const off = await onAuthChange((nextEmail) => {
+        if (cancelled) return
+        emailRef.current = nextEmail
+        setEmail(nextEmail)
+        if (nextEmail === null) {
+          setSyncStatus('signed-out')
+          setSyncError(null)
+        }
+      })
+      if (cancelled) {
+        off()
+        return
+      }
+      unsubscribe = off
+
+      // getSession 是本地读取（必要时才刷新 token），不会弹任何窗口
+      const current = await getSignedInEmail()
       if (cancelled) return
-      setNeedsPermission(!granted)
-      updateMeta({ dirName: handle.name })
+      emailRef.current = current
+      setEmail(current)
+      if (current === null) {
+        setSyncStatus('signed-out')
+        return
+      }
+      await runSync()
     })()
+
     return () => {
       cancelled = true
+      unsubscribe?.()
     }
-  }, [backupSupported])
+  }, [cloudEnabled])
 
-  // 改动后 2 秒写盘；挂载时也会跑一次，顺手刷新当天那份快照。
-  // 只有权限已经是 granted 才会真写，所以这里不会弹权限窗。
+  // 改动后 2 秒推一次。挂载时也会跑一次，顺手补齐上次没传上去的改动。
   useEffect(() => {
-    if (!backupSupported || backupSuspended || backupMeta.dirName === null) return
-    const timer = setTimeout(() => void backupNow(false), 2000)
+    if (!cloudEnabled || syncSuspended || email === null) return
+    if (skipAutoSyncRef.current) {
+      skipAutoSyncRef.current = false
+      return
+    }
+    const timer = setTimeout(() => void runSync(), 2000)
     return () => clearTimeout(timer)
-  }, [records, backupSupported, backupMeta.dirName])
-
-  /** 落盘并把结果如实反映到横幅上。返回是否成功，让调用方决定怎么措辞。 */
-  function persist(next: FuelRecord[]): boolean {
-    const result = save(storage, next)
-    setSaveError(result.ok ? null : result.error)
-    return result.ok
-  }
+  }, [records, cloudEnabled, email, syncSuspended])
 
   function handleAdd(record: FuelRecord) {
-    const next = [...records, record]
-    setRecords(next)
-    persist(next)
+    applyLocal([...records, record])
 
     // 跳到刚记下的那个月份。否则记一笔上个月的账时，界面上什么都不会变，
     // 用户会以为没记上。
@@ -261,9 +403,7 @@ export function App() {
   }
 
   function handleDelete(id: string) {
-    const next = records.filter((r) => r.id !== id)
-    setRecords(next)
-    persist(next)
+    applyLocal(records.filter((r) => r.id !== id))
   }
 
   function handleToggleTheme() {
@@ -282,8 +422,10 @@ export function App() {
     anchor.click()
     // 不能紧跟着 revoke：Safari / Firefox 的下载是异步开始的，立刻释放偶尔会下载失败
     setTimeout(() => URL.revokeObjectURL(url), 1000)
-    // 手动导出同样算"拿到了一份数据副本"，用来消掉超期提醒
-    updateMeta({ lastCopiedAt: Date.now() })
+    // 手动导出同样算「拿到了一份数据副本」，用来消掉超期提醒
+    const now = Date.now()
+    writeLastCopied(storage, now)
+    setLastCopiedAt(now)
   }
 
   /**
@@ -314,15 +456,13 @@ export function App() {
     )
     if (!confirmed) return
 
-    setRecords(parsed.records)
     // 落盘失败必须同时进横幅，不能只闪一个 alert，
     // 更不能在没落盘的情况下说「已导入成功」——那会让用户以为数据已经安全了。
-    const saved = save(storage, parsed.records)
-    setSaveError(saved.ok ? null : saved.error)
+    const saved = applyLocal(parsed.records)
     window.alert(
       saved.ok
         ? `已导入 ${parsed.records.length} 条记录。`
-        : `已导入 ${parsed.records.length} 条记录，但保存失败，刷新后会丢失。\n\n${saved.error}`,
+        : `已导入 ${parsed.records.length} 条记录，但保存失败，刷新后会丢失。\n\n${saved.error ?? ''}`,
     )
   }
 
@@ -337,21 +477,21 @@ export function App() {
   const latestSegment = segments.length > 0 ? segments[segments.length - 1] : null
   const per100kmById = new Map(segments.map((s) => [s.endId, segmentPer100km(s)]))
 
-  // 自动备份正常工作时不该再唠叨，所以只在它不可用/没开/出问题时才算提醒。
+  // 同步正常工作时不该再唠叨，所以只在没登录 / 出错 / 站点没配 Supabase 时才提醒。
   // 时间是每天才变一次的量，不值得进 useMemo。
-  const autoBackupHealthy =
-    backupMeta.dirName !== null && !needsPermission && backupError === null
+  const syncHealthy =
+    email !== null && syncError === null && syncStatus !== 'conflict' && syncStatus !== 'error'
+  const lastCopyAt = Math.max(syncMeta?.lastSyncedAt ?? 0, lastCopiedAt ?? 0) || null
   const reminder =
-    !autoBackupHealthy &&
-    shouldRemindExport(backupMeta.lastCopiedAt, Date.now(), records.length)
+    !syncHealthy && shouldRemindBackup(lastCopyAt, Date.now(), records.length)
       ? `${
-          backupMeta.lastCopiedAt === null
+          lastCopyAt === null
             ? `还没有备份过，现有 ${records.length} 条记录只存在这个浏览器里。`
-            : `已经 ${Math.floor((Date.now() - backupMeta.lastCopiedAt) / DAY_MS)} 天没有备份了（现有 ${records.length} 条记录）。`
+            : `已经 ${Math.floor((Date.now() - lastCopyAt) / DAY_MS)} 天没有备份了（现有 ${records.length} 条记录）。`
         }${
-          backupSupported
-            ? '点右上角「备份」可以让它每次改动都自动写一份。'
-            : '这个浏览器不支持自动写盘，请点右上角「备份」→「导出」手动存一份。'
+          cloudEnabled
+            ? '点右上角「备份」登录后，每次改动都会自动同步到 Supabase。'
+            : '这个站点还没有配置 Supabase，请点右上角「备份」→「导出」手动存一份。'
         }`
       : null
 
@@ -373,14 +513,18 @@ export function App() {
         <header className="flex items-center justify-between gap-3 border-b border-border pt-6 pb-4">
           <h1 className="m-0 font-mono text-[15px] font-semibold tracking-[0.02em]">加油记账</h1>
           <div className="flex items-center gap-1.5">
-            <BackupPanel
-              supported={backupSupported}
-              dirName={backupMeta.dirName}
-              needsPermission={needsPermission}
-              lastCopiedAt={backupMeta.lastCopiedAt}
-              onEnable={() => void handleEnableBackup()}
-              onDisable={() => void handleDisableBackup()}
-              onBackupNow={() => void backupNow(true)}
+            <SyncPanel
+              configured={cloudEnabled}
+              email={email}
+              status={syncStatus}
+              lastSyncedAt={syncMeta?.lastSyncedAt ?? null}
+              error={syncError}
+              onSignIn={handleSignIn}
+              onSignUp={handleSignUp}
+              onSignOut={() => void handleSignOut()}
+              onSyncNow={() => void runSync()}
+              onUseCloud={() => void runSync('pull')}
+              onKeepLocal={() => void runSync('push')}
               onExport={handleExport}
               onImport={() => fileRef.current?.click()}
             />
@@ -392,7 +536,7 @@ export function App() {
           <NoticeBanner
             notice={notice}
             saveError={saveError}
-            backupError={backupError}
+            syncError={syncError}
             reminder={reminder}
           />
           <EntryForm records={records} onAdd={handleAdd} />
