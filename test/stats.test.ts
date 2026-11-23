@@ -296,3 +296,13 @@ test('odometerBounds：只看其他日期，没有约束的一侧为 null', () =
   assert.deepEqual(odometerBounds(records, '2026-09-01'), { min: null, max: 10000 });
   assert.deepEqual(odometerBounds([], '2026-10-01'), { min: null, max: null });
 });
+
+test('odometerBounds：编辑记录传入 excludeId 时跳过自身，改日期不会与自己冲突', () => {
+  const r1 = { ...fill('2026-10-01', 10000, 40, 300), id: 'r1' };
+  const r2 = { ...fill('2026-10-10', 10500, 40, 300), id: 'r2' };
+  const r3 = { ...fill('2026-10-20', 11000, 40, 300), id: 'r3' };
+  const records = [r1, r2, r3];
+  // 把 r2 的日期改到 10-12，若不排除 r2 自己，min 会变成 10500 导致报错
+  assert.deepEqual(odometerBounds(records, '2026-10-12'), { min: 10500, max: 11000 });
+  assert.deepEqual(odometerBounds(records, '2026-10-12', 'r2'), { min: 10000, max: 11000 });
+});

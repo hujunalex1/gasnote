@@ -205,15 +205,18 @@ export function economySummary(segments: EconomySegment[]): EconomySummary {
 /**
  * 某天的总里程应该落在什么范围内：比之前日期的最大里程大，比之后日期的最小里程小。
  * 同一天的记录不参与比较——同一天加两次油时谁先谁后由里程本身决定。
- * 用于录入时提示「里程填错了」，没有约束的一侧为 null。
+ * 编辑已有记录时传入 excludeId，避免修改日期时和自己原来的里程撞车。
+ * 用于录入/编辑时提示「里程填错了」，没有约束的一侧为 null。
  */
 export function odometerBounds(
   records: FuelRecord[],
   date: string,
+  excludeId?: string,
 ): { min: number | null; max: number | null } {
   let min: number | null = null
   let max: number | null = null
   for (const r of records) {
+    if (excludeId !== undefined && r.id === excludeId) continue
     if (r.odometer === undefined || r.date === date) continue
     if (r.date < date) min = min === null ? r.odometer : Math.max(min, r.odometer)
     else max = max === null ? r.odometer : Math.min(max, r.odometer)

@@ -14,6 +14,9 @@ export const LAST_COPIED_KEY = 'gasnote.copied.v1'
 /** 多久没拿到数据副本就提醒（天）。 */
 export const STALE_DAYS = 14
 
+/** 自动拉取保护阈值：本机至少有这么多条记录而云端突然变空时，拦截自动覆盖。 */
+export const PULL_WIPE_GUARD_MIN_LOCAL = 5
+
 export const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
@@ -105,6 +108,18 @@ export function mergeRecords(
     records: [...remote, ...extras],
     addedFromLocal: extras.length,
   }
+}
+
+/**
+ * 防连锁清空守卫：自动拉取时，如果本机已有较多历史记录而云端突然变为空（0 条），
+ * 拦截静默覆盖并转为让用户确认——避免一台设备误清空云端后，其它设备打开页面跟着全清。
+ */
+export function shouldGuardPullWipe(
+  localCount: number,
+  remoteCount: number,
+  minLocal: number = PULL_WIPE_GUARD_MIN_LOCAL,
+): boolean {
+  return localCount >= minLocal && remoteCount === 0
 }
 
 /** 标记本机有改动，下次同步要推送。 */

@@ -25,11 +25,12 @@ type Props = {
   onSyncNow: () => void
   /** 冲突时推荐选项：按 id 无损合并两边记录 */
   onMerge: () => void
-  /** 冲突时覆盖本机：放弃本机改动（返回 false 表示用户取消确认） */
-  onUseCloud: () => boolean | void
-  /** 冲突时覆盖云端：用本机替换云端（返回 false 表示用户取消确认） */
-  onKeepLocal: () => boolean | void
+  /** 冲突时覆盖本机：弹出应用内确认框后执行 */
+  onUseCloud: () => void
+  /** 冲突时覆盖云端：弹出应用内确认框后执行 */
+  onKeepLocal: () => void
   onExport: () => void
+  onExportCsv: () => void
   onImport: () => void
 }
 
@@ -69,6 +70,7 @@ export function SyncPanel({
   onUseCloud,
   onKeepLocal,
   onExport,
+  onExportCsv,
   onImport,
 }: Props) {
   const [open, setOpen] = useState(false)
@@ -80,9 +82,9 @@ export function SyncPanel({
   const [formInfo, setFormInfo] = useState<string | null>(null)
 
   // 点完操作就收起面板：留着它盖在页面上，用户会怀疑到底生效没有。
-  // 如果回调弹了确认框且用户点了取消（返回 false），保持面板打开。
-  const run = (fn: () => boolean | void) => () => {
-    if (fn() !== false) setOpen(false)
+  const run = (fn: () => void) => () => {
+    fn()
+    setOpen(false)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -239,10 +241,16 @@ export function SyncPanel({
             云端挂了、账号丢了、想搬到别的工具，都还能靠这个 JSON。 */}
         <div className="flex flex-col gap-2.5 border-t border-border pt-2.5">
           <h2 className={TITLE}>手动</h2>
-          <p className={NOTE}>导出一个 JSON 文件；导入会用文件里的记录整体替换现有记录。</p>
-          <div className="flex gap-1.5">
+          <p className={NOTE}>
+            导出 JSON 用于完整备份恢复，导出 CSV 方便用 Excel / Numbers 查看；导入会用 JSON
+            里的记录整体替换现有记录。
+          </p>
+          <div className="flex flex-wrap gap-1.5">
             <Button variant="outline" size="sm" onClick={run(onExport)}>
-              导出
+              导出 JSON
+            </Button>
+            <Button variant="outline" size="sm" onClick={run(onExportCsv)}>
+              导出 CSV
             </Button>
             <Button variant="outline" size="sm" onClick={run(onImport)}>
               导入

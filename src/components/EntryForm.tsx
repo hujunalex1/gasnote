@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button.tsx'
 import { DatePicker } from '@/components/DatePicker.tsx'
 import { Input } from '@/components/ui/input.tsx'
@@ -30,6 +30,26 @@ export function EntryForm({ records, onAdd }: Props) {
   const [full, setFull] = useState(true)
   const [error, setError] = useState('')
   const amountRef = useRef<HTMLInputElement>(null)
+  /** 用户没手动改过日期时，标签页跨天切回前台会自动同步为今天 */
+  const dateTouchedRef = useRef(false)
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || dateTouchedRef.current) return
+      const today = todayISO()
+      setDate((current) => (current === today ? current : today))
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  // 找当前所选日期及之前的最大里程，作为输入提示，防手滑多打一位
+  let lastOdometer: number | null = null
+  for (const r of records) {
+    if (r.odometer !== undefined && r.date <= date) {
+      lastOdometer = lastOdometer === null ? r.odometer : Math.max(lastOdometer, r.odometer)
+    }
+  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -86,6 +106,7 @@ export function EntryForm({ records, onAdd }: Props) {
     onAdd(record)
 
     // 日期重置为今天而不是保留上次的值，避免用户忘了改日期而把账记进错误的月份
+    dateTouchedRef.current = false
     setDate(todayISO())
     setAmount('')
     setNote('')
@@ -93,7 +114,14 @@ export function EntryForm({ records, onAdd }: Props) {
     setLiters('')
     // 不加满是例外，记完一笔就回到默认，免得下一次忘了勾回来
     setFull(true)
-    amountRef.current?.focus()
+    // 桌面端自动聚焦方便连续补录；手机触屏收起软键盘，避免遮住刚更新的统计和明细
+    if (globalThis.matchMedia?.('(pointer: coarse)').matches) {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur()
+      }
+    } else {
+      amountRef.current?.focus()
+    }
   }
 
   return (
@@ -111,7 +139,14 @@ export function EntryForm({ records, onAdd }: Props) {
           <Label htmlFor="entry-date" className="font-mono text-xs text-muted-foreground">
             日期
           </Label>
-          <DatePicker id="entry-date" value={date} onChange={setDate} />
+          <DatePicker
+            id="entry-date"
+            value={date}
+            onChange={(next) => {
+              dateTouchedRef.current = true
+              setDate(next)
+            }}
+          />
         </div>
 
         <div className="flex w-full flex-col gap-1.5 sm:w-auto">
@@ -156,7 +191,11 @@ export function EntryForm({ records, onAdd }: Props) {
             id="entry-odometer"
             inputMode="numeric"
             autoComplete="off"
-            placeholder="选填"
+            placeholder={
+              lastOdometer !== null
+                ? `上次 ${lastOdometer.toLocaleString('en-US')}`
+                : '选填'
+            }
             value={odometer}
             onChange={(e) => setOdometer(e.target.value)}
             className="h-10 bg-card font-mono sm:w-[140px]"

@@ -150,7 +150,9 @@
    「弹层关不掉」。这里按 Base UI 自己的状态标记兜底隐藏。
    若 Base UI 将来恢复正常卸载，这条规则也无害。 */
 [data-slot="popover-content"][data-closed],
-[data-slot="select-content"][data-closed] {
+[data-slot="select-content"][data-closed],
+[data-slot="dialog-backdrop"][data-closed],
+[data-slot="dialog-popup"][data-closed] {
   display: none;
 }
 

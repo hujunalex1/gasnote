@@ -77,6 +77,13 @@ export function formatPer100km(value: number): string {
   return value.toFixed(1)
 }
 
+/** 根据金额与升数计算并格式化油价单价，例如 "7.85 元/L"。升数无效时返回空串。 */
+export function formatUnitPrice(amount: number, liters: number): string {
+  if (!Number.isFinite(amount) || !Number.isFinite(liters) || liters <= 0) return ''
+  const price = Math.round((amount / liters) * 100) / 100
+  return `${price.toFixed(2)} 元/L`
+}
+
 /**
  * 金额 → 显示文本，带 ¥ 前缀与千分位，固定两位小数。
  * 全程走整数"分"，避免浮点误差漏到界面上。

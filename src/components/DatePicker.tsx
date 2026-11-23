@@ -1,11 +1,10 @@
-import { useState } from 'react'
-import { zhCN } from 'date-fns/locale'
+import { lazy, Suspense, useState } from 'react'
 import { CalendarIcon } from 'lucide-react'
 import { cn } from 'cn'
-import { Button } from '@/components/ui/button.tsx'
-import { Calendar } from '@/components/ui/calendar.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
-import { fromISODate, toISODate } from '@/lib/format.ts'
+import { toISODate } from '@/lib/format.ts'
+
+const LazyCalendar = lazy(() => import('@/components/DatePickerCalendar.tsx'))
 
 type Props = {
   id?: string
@@ -17,11 +16,7 @@ type Props = {
 
 /**
  * 自绘日期选择器，替代 <input type="date">。
- *
- * 为什么要自己画：原生那个日历弹窗是浏览器渲染的封闭控件，页面 CSS 够不着它，
- * 里面那个亮蓝色选中态和本项目的琥珀配色是硬冲突，改不掉只能换掉。
- * 换成 shadcn 的 Calendar 后，选中态走它自己的 data-[selected-single]:bg-primary，
- * 自动就是我们的琥珀色；格子圆角也走 --radius，和工业风的方角一致。
+ * 日历主体通过 React.lazy 按需加载，只有展开弹层时才拉取 react-day-picker 与 date-fns。
  */
 export function DatePicker({ id, value, onChange, invalid = false }: Props) {
   const [open, setOpen] = useState(false)
@@ -51,32 +46,17 @@ export function DatePicker({ id, value, onChange, invalid = false }: Props) {
         <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
 
-      {/* 描边与去阴影现在由 ui/popover.tsx 的默认值提供，这里只需覆盖内边距：
-          日历和「今天」按钮要自己撑满弹层，默认的 p-2.5 会在四周留一圈。 */}
-      <PopoverContent
-        align="start"
-        className="w-auto p-0"
-      >
-        <Calendar
-          mode="single"
-          required
-          selected={fromISODate(value)}
-          onSelect={pick}
-          locale={zhCN}
-          // 与系统原生日历一致：周日排第一列
-          weekStartsOn={0}
-          autoFocus
-        />
-        <div className="border-t border-border p-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full font-mono text-xs"
-            onClick={() => pick(new Date())}
+      {/* 描边与去阴影由 ui/popover.tsx 的默认值提供，这里只覆盖内边距 */}
+      <PopoverContent align="start" className="w-auto p-0">
+        {open ? (
+          <Suspense
+            fallback={
+              <div className="px-6 py-8 font-mono text-xs text-muted-foreground">加载日历…</div>
+            }
           >
-            今天
-          </Button>
-        </div>
+            <LazyCalendar value={value} onPick={pick} />
+          </Suspense>
+        ) : null}
       </PopoverContent>
     </Popover>
   )

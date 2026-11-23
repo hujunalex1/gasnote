@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  normalizeRecords, parseImport, serialize, newId, newIdFallback, SCHEMA_VERSION,
+  normalizeRecords, parseImport, serialize, serializeCsv, newId, newIdFallback, SCHEMA_VERSION,
   decodeStored, probeStorage, load, save, STORAGE_KEY, CORRUPT_KEY,
 } from '../src/lib/store.ts';
 
@@ -315,4 +315,29 @@ test('parseImport：带油耗字段的记录往返一致', () => {
   const r = parseImport(serialize(original));
   assert.equal(r.ok, true);
   assert.deepEqual(r.records, original);
+});
+
+// ---- CSV 导出 ----
+
+test('serializeCsv：带 UTF-8 BOM、按日期降序、计算单价并正确转义备注', () => {
+  const records = [
+    good({ id: 'r1', date: '2026-10-01', amount: 300, note: '普通备注' }),
+    good({
+      id: 'r2',
+      date: '2026-10-15',
+      amount: 320,
+      liters: 40,
+      odometer: 12345,
+      full: true,
+      note: '中石化, "95号"',
+    }),
+  ];
+  const per100 = new Map([['r2', 7.84]]);
+  const csv = serializeCsv(records, per100);
+  assert.ok(csv.startsWith('\uFEFF'), '应以 UTF-8 BOM 开头方便 Excel 识别中文');
+  const lines = csv.slice(1).split('\r\n');
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0], '日期,金额(元),升数(L),单价(元/L),总里程(km),是否加满,油耗(L/100km),备注');
+  assert.equal(lines[1], '2026-10-15,320.00,40.00,8.00,12345,是,7.8,"中石化, ""95号"""');
+  assert.equal(lines[2], '2026-10-01,300.00,,,,,,普通备注');
 });

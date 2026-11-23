@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   parseAmountInput, formatMoney, toISODate, fromISODate, todayISO, isValidDate,
   parseOdometerInput, parseLitersInput, formatKm, formatLiters, formatPer100km,
+  formatUnitPrice,
 } from '../src/lib/format.ts';
 
 test('接受整数金额', () => {
@@ -203,9 +204,13 @@ test('升数：三位小数、带单位、零被拒绝', () => {
   }
 });
 
-test('formatKm / formatLiters / formatPer100km', () => {
+test('formatKm / formatLiters / formatPer100km / formatUnitPrice', () => {
   assert.equal(formatKm(12345), '12,345 km');
   assert.equal(formatKm(500), '500 km');
   assert.equal(formatLiters(45.2), '45.20 L');
   assert.equal(formatPer100km(7.849), '7.8');
+  assert.equal(formatUnitPrice(320, 40), '8.00 元/L');
+  assert.equal(formatUnitPrice(350, 45.2), '7.74 元/L');
+  assert.equal(formatUnitPrice(320, 0), '');
+  assert.equal(formatUnitPrice(320, -1), '');
 });

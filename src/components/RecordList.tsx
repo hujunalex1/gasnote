@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button.tsx'
-import { formatKm, formatLiters, formatMoney, formatPer100km } from '@/lib/format.ts'
+import {
+  formatKm,
+  formatLiters,
+  formatMoney,
+  formatPer100km,
+  formatUnitPrice,
+} from '@/lib/format.ts'
 import type { FuelRecord } from '@/lib/types.ts'
 
 type Props = {
@@ -10,10 +16,11 @@ type Props = {
   records: FuelRecord[]
   /** 结束了某一段的那几次加满 → 该段油耗。没有的记录不显示油耗 */
   per100kmById: Map<string, number>
+  onEdit: (record: FuelRecord) => void
   onDelete: (id: string) => void
 }
 
-export function RecordList({ year, month, records, per100kmById, onDelete }: Props) {
+export function RecordList({ year, month, records, per100kmById, onEdit, onDelete }: Props) {
   // 只允许一行处于「确认删除」态，点别处或点否都会退回
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
@@ -30,11 +37,14 @@ export function RecordList({ year, month, records, per100kmById, onDelete }: Pro
           {records.map((record) => {
             const confirming = confirmingId === record.id
             const per100km = per100kmById.get(record.id)
+            const unitPrice =
+              record.liters !== undefined ? formatUnitPrice(record.amount, record.liters) : ''
             const details = [
               record.odometer !== undefined ? formatKm(record.odometer) : null,
               record.liters !== undefined
                 ? `${formatLiters(record.liters)}${record.full === false ? '（未加满）' : ''}`
                 : null,
+              unitPrice || null,
               per100km !== undefined ? `${formatPer100km(per100km)} L/100km` : null,
             ].filter((part) => part !== null)
             return (
@@ -61,7 +71,7 @@ export function RecordList({ year, month, records, per100kmById, onDelete }: Pro
                   ) : null}
                 </span>
 
-                <span className="ml-auto flex items-center gap-1.5">
+                <span className="ml-auto flex shrink-0 items-center gap-1">
                   {confirming ? (
                     <>
                       <span className="font-mono text-[12px] text-destructive">确认删除？</span>
@@ -80,16 +90,26 @@ export function RecordList({ year, month, records, per100kmById, onDelete }: Pro
                       </Button>
                     </>
                   ) : (
-                    // 删除是低频操作：平时只是一行灰字，不和金额抢视线；悬停才变红。
-                    // 真正的防误触在下一步的「确认删除？」，那一步仍是醒目的红色。
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
-                      onClick={() => setConfirmingId(record.id)}
-                    >
-                      删除
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="px-2 text-muted-foreground hover:text-foreground"
+                        onClick={() => onEdit(record)}
+                      >
+                        编辑
+                      </Button>
+                      {/* 删除是低频操作：平时只是一行灰字，不和金额抢视线；悬停才变红。
+                          真正的防误触在下一步的「确认删除？」，那一步仍是醒目的红色。 */}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="px-2 text-muted-foreground hover:text-destructive"
+                        onClick={() => setConfirmingId(record.id)}
+                      >
+                        删除
+                      </Button>
+                    </>
                   )}
                 </span>
               </li>

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   decideSync, markDirty, markSynced, mergeRecords, normalizeEmail,
+  shouldGuardPullWipe, PULL_WIPE_GUARD_MIN_LOCAL,
   parseSyncMeta, readSyncMeta, writeSyncMeta,
   readLastCopied, writeLastCopied, shouldRemindBackup,
   SYNC_META_KEY, LAST_COPIED_KEY, STALE_DAYS, DAY_MS,
@@ -320,4 +321,14 @@ test('shouldRemindBackup：阈值可注入', () => {
 
 test('DAY_MS 就是一天的毫秒数', () => {
   assert.equal(DAY_MS, 86400000);
+});
+
+// ---- shouldGuardPullWipe ----
+
+test('shouldGuardPullWipe：本机达到阈值且云端为空时触发保护', () => {
+  assert.equal(shouldGuardPullWipe(PULL_WIPE_GUARD_MIN_LOCAL, 0), true);
+  assert.equal(shouldGuardPullWipe(20, 0), true);
+  assert.equal(shouldGuardPullWipe(PULL_WIPE_GUARD_MIN_LOCAL - 1, 0), false);
+  assert.equal(shouldGuardPullWipe(20, 1), false);
+  assert.equal(shouldGuardPullWipe(0, 0), false);
 });

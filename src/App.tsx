@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { ConfirmDialog, type ConfirmRequest } from '@/components/ConfirmDialog.tsx'
 import { EconomyPanel } from '@/components/EconomyPanel.tsx'
+import { EditRecordDialog } from '@/components/EditRecordDialog.tsx'
 import { EntryForm } from '@/components/EntryForm.tsx'
 import { NoticeBanner } from '@/components/NoticeBanner.tsx'
 import { RecordList } from '@/components/RecordList.tsx'
@@ -7,6 +9,7 @@ import { SpendChart } from '@/components/SpendChart.tsx'
 import { SummaryPanel } from '@/components/SummaryPanel.tsx'
 import { SyncPanel, type SyncStatus } from '@/components/SyncPanel.tsx'
 import { ThemeToggle } from '@/components/ThemeToggle.tsx'
+import { Toast, type ToastMessage } from '@/components/Toast.tsx'
 import {
   getSignedInEmail,
   isCloudConfigured,
@@ -32,8 +35,10 @@ import {
   decodeStored,
   load,
   parseImport,
+  PRE_WIPE_BACKUP_KEY,
   save,
   serialize,
+  serializeCsv,
   STORAGE_KEY,
   type Notice,
   type StorageLike,
@@ -48,6 +53,7 @@ import {
   normalizeEmail,
   readLastCopied,
   readSyncMeta,
+  shouldGuardPullWipe,
   shouldRemindBackup,
   writeLastCopied,
   writeSyncMeta,
@@ -88,12 +94,25 @@ export function App() {
   const [notice] = useState<Notice | null>(booted.notice)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const [currentYear] = useState(() => new Date().getFullYear())
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear())
   const [year, setYear] = useState(currentYear)
   const [month, setMonth] = useState(() => new Date().getMonth() + 1)
 
   const [isDark, setIsDark] = useState(false)
+  const [editingRecord, setEditingRecord] = useState<FuelRecord | null>(null)
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
+  const [toast, setToast] = useState<ToastMessage | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const toastSeqRef = useRef(0)
+
+  const showToast = useCallback((text: string, tone: 'info' | 'error' = 'info') => {
+    toastSeqRef.current += 1
+    setToast({ id: toastSeqRef.current, text, tone })
+  }, [])
+
+  const dismissToast = useCallback(() => {
+    setToast(null)
+  }, [])
 
   // ---- 云同步：localStorage 仍是主存储，Supabase 是那份「反正不会丢」的副本 ----
   const [cloudEnabled] = useState(isCloudConfigured)
@@ -125,6 +144,8 @@ export function App() {
   const syncBusyRef = useRef(false)
   /** 本地改动后的 2 秒防抖推送定时器，只在真的改了本地数据时才调度 */
   const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 上次成功拉取云端的时间戳，用于切回前台时节流拉取（30 秒内不重复拉） */
+  const lastPullAtRef = useRef(0)
 
   // 主题：首屏类名已由 index.html 的内联脚本挂好，这里只同步 React 状态
   useEffect(() => {
@@ -304,6 +325,7 @@ export function App() {
         failSync(pulled.error)
         return
       }
+      lastPullAtRef.current = Date.now()
       const remote = pulled.value
 
       if (force === 'pull') {
@@ -332,6 +354,27 @@ export function App() {
       }
 
       if (action === 'pull') {
+        // 防连锁清空：如果云端突然变空而本机仍有较多历史记录，拦截静默覆盖，
+        // 先原样备份到本地 key，再交由用户确认是恢复云端还是清空本机。
+        if (shouldGuardPullWipe(recordsRef.current.length, remote.records.length)) {
+          try {
+            storage.setItem(PRE_WIPE_BACKUP_KEY, serialize(recordsRef.current))
+          } catch {
+            /* 忽略备份写入失败，下面仍会拦截清空 */
+          }
+          const merged = mergeRecords(recordsRef.current, remote.records)
+          setConflictSummary({
+            localCount: recordsRef.current.length,
+            remoteCount: remote.records.length,
+            mergedCount: merged.records.length,
+          })
+          syncStatusRef.current = 'conflict'
+          setSyncStatus('conflict')
+          setSyncError(
+            `云端记录已变为空（0 条），但本机仍有 ${recordsRef.current.length} 条历史记录。为防止连锁清空，已拦截自动覆盖，请在「备份」面板确认。`,
+          )
+          return
+        }
         adoptRemote(who, meta, remote)
         return
       }
@@ -406,25 +449,37 @@ export function App() {
     setSyncStatus('signed-out')
   }
 
-  /** 冲突时由用户确认后用云端覆盖本机（会丢掉本机独有改动）。返回 false 表示取消。 */
-  function handleUseCloud(): boolean {
+  /** 冲突时由用户确认后用云端覆盖本机（会丢掉本机独有改动）。 */
+  function handleUseCloud(): void {
     const localCount = recordsRef.current.length
     const remoteCount = conflictSummary?.remoteCount
+    if (localCount === 0) {
+      void runSync('pull')
+      return
+    }
     const detail =
       remoteCount !== undefined
         ? `将用云端的 ${remoteCount} 条记录覆盖本机的 ${localCount} 条记录，本机未同步的改动将丢失。`
         : `将用云端记录覆盖本机的 ${localCount} 条记录，本机未同步的改动将丢失。`
-    if (localCount > 0 && !window.confirm(`${detail}\n\n此操作不可撤销，确定覆盖本机？`)) {
-      return false
-    }
-    void runSync('pull')
-    return true
+    setConfirmRequest({
+      title: '用云端覆盖本机？',
+      description: `${detail}\n\n此操作不可撤销。`,
+      confirmLabel: '确认覆盖本机',
+      destructive: true,
+      onConfirm: () => {
+        void runSync('pull')
+      },
+    })
   }
 
-  /** 冲突时由用户确认后用本机覆盖云端（可能清除云端历史记录）。返回 false 表示取消。 */
-  function handleKeepLocal(): boolean {
+  /** 冲突时由用户确认后用本机覆盖云端（可能清除云端历史记录）。 */
+  function handleKeepLocal(): void {
     const localCount = recordsRef.current.length
     const remoteCount = conflictSummary?.remoteCount
+    if (remoteCount === 0) {
+      void runSync('push')
+      return
+    }
     const dropNote =
       remoteCount !== undefined && localCount < remoteCount
         ? `（云端将减少 ${remoteCount - localCount} 条历史记录）`
@@ -433,14 +488,15 @@ export function App() {
       remoteCount !== undefined
         ? `将用本机的 ${localCount} 条记录整份替换云端的 ${remoteCount} 条记录${dropNote}。`
         : `将用本机的 ${localCount} 条记录整份替换云端全部数据。`
-    if (
-      (remoteCount === undefined || remoteCount > 0) &&
-      !window.confirm(`${detail}\n\n此操作不可撤销，确定覆盖云端？`)
-    ) {
-      return false
-    }
-    void runSync('push')
-    return true
+    setConfirmRequest({
+      title: '用本机覆盖云端？',
+      description: `${detail}\n\n此操作不可撤销。`,
+      confirmLabel: '确认覆盖云端',
+      destructive: true,
+      onConfirm: () => {
+        void runSync('push')
+      },
+    })
   }
 
   /** 本机有了改动：落盘 + 标记待上传 + 调度 2 秒防抖同步。 */
@@ -537,6 +593,54 @@ export function App() {
     }
   }, [cloudEnabled])
 
+  // 网络恢复、切回前台、切后台/离开页面时的生命周期同步与跨年刷新：
+  // - 断网恢复（online）：自动补传未同步改动或拉取最新云端数据
+  // - 切后台/关闭页面（hidden / pagehide）：若有排队的 2 秒防抖推送，立即发出去，避免手机刚记完就锁屏丢推送
+  // - 切回前台（visible）：跨年时刷新当前年份；已登录且有脏数据/出错/超过 30 秒没拉过时自动同步
+  useEffect(() => {
+    const flushPendingSync = () => {
+      if (!cloudEnabled || syncSuspended || emailRef.current === null) return
+      if (syncStatusRef.current === 'conflict') return
+      if (autoSyncTimerRef.current !== null) {
+        cancelAutoSync()
+        void runSync()
+      }
+    }
+
+    const onOnline = () => {
+      if (!cloudEnabled || emailRef.current === null) return
+      if (syncStatusRef.current === 'conflict') return
+      void runSync()
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushPendingSync()
+        return
+      }
+      if (document.visibilityState !== 'visible') return
+
+      const nowYear = new Date().getFullYear()
+      setCurrentYear((prev) => (prev === nowYear ? prev : nowYear))
+
+      if (!cloudEnabled || emailRef.current === null) return
+      if (syncStatusRef.current === 'conflict') return
+      const stalePull = Date.now() - lastPullAtRef.current > 30_000
+      if (metaRef.current?.dirty || syncStatusRef.current === 'error' || stalePull) {
+        void runSync()
+      }
+    }
+
+    globalThis.addEventListener?.('online', onOnline)
+    globalThis.addEventListener?.('pagehide', flushPendingSync)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      globalThis.removeEventListener?.('online', onOnline)
+      globalThis.removeEventListener?.('pagehide', flushPendingSync)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [cloudEnabled, syncSuspended])
+
   function handleAdd(record: FuelRecord) {
     applyLocal([...records, record])
 
@@ -544,6 +648,13 @@ export function App() {
     // 用户会以为没记上。
     setYear(Number(record.date.slice(0, 4)))
     setMonth(Number(record.date.slice(5, 7)))
+  }
+
+  function handleEdit(updated: FuelRecord) {
+    applyLocal(records.map((r) => (r.id === updated.id ? updated : r)))
+    setYear(Number(updated.date.slice(0, 4)))
+    setMonth(Number(updated.date.slice(5, 7)))
+    showToast('已更新记录。')
   }
 
   function handleDelete(id: string) {
@@ -557,24 +668,43 @@ export function App() {
     setIsDark(next === 'dark')
   }
 
-  function handleExport() {
-    const blob = new Blob([serialize(records)], { type: 'application/json' })
+  function triggerDownload(content: string, mime: string, filename: string) {
+    const blob = new Blob([content], { type: mime })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `gasnote-backup-${todayISO()}.json`
+    anchor.download = filename
     anchor.click()
     // 不能紧跟着 revoke：Safari / Firefox 的下载是异步开始的，立刻释放偶尔会下载失败
     setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  function handleExport() {
+    triggerDownload(serialize(records), 'application/json', `gasnote-backup-${todayISO()}.json`)
     // 手动导出同样算「拿到了一份数据副本」，用来消掉超期提醒
     const now = Date.now()
     writeLastCopied(storage, now)
     setLastCopiedAt(now)
+    showToast(`已导出 JSON 备份（${records.length} 条记录）。`)
+  }
+
+  function handleExportCsv() {
+    const segs = economySegments(records)
+    const per100Map = new Map(segs.map((s) => [s.endId, segmentPer100km(s)]))
+    triggerDownload(
+      serializeCsv(records, per100Map),
+      'text/csv;charset=utf-8',
+      `gasnote-${todayISO()}.csv`,
+    )
+    const now = Date.now()
+    writeLastCopied(storage, now)
+    setLastCopiedAt(now)
+    showToast(`已导出 CSV 表格（${records.length} 条记录）。`)
   }
 
   /**
    * 导入是唯一可能一次性毁掉全部数据的操作，所以：
-   * 先全量解析校验（parseImport），通过了才覆盖。任何一步失败都保持现状不动。
+   * 先全量解析校验（parseImport），通过了才弹窗确认并覆盖。任何一步失败都保持现状不动。
    */
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -585,29 +715,34 @@ export function App() {
     try {
       text = await file.text()
     } catch {
-      window.alert('读取文件失败。')
+      showToast('读取文件失败。', 'error')
       return
     }
 
     const parsed = parseImport(text)
     if (!parsed.ok) {
-      window.alert(`导入失败，你的数据没有任何改动。\n\n原因：${parsed.error}`)
+      showToast(`导入失败，数据未改动：${parsed.error}`, 'error')
       return
     }
 
-    const confirmed = window.confirm(
-      `将用文件里的 ${parsed.records.length} 条记录替换当前的 ${records.length} 条记录。\n\n此操作不可撤销，确定继续？`,
-    )
-    if (!confirmed) return
-
-    // 落盘失败必须同时进横幅，不能只闪一个 alert，
-    // 更不能在没落盘的情况下说「已导入成功」——那会让用户以为数据已经安全了。
-    const saved = applyLocal(parsed.records)
-    window.alert(
-      saved.ok
-        ? `已导入 ${parsed.records.length} 条记录。`
-        : `已导入 ${parsed.records.length} 条记录，但保存失败，刷新后会丢失。\n\n${saved.error ?? ''}`,
-    )
+    setConfirmRequest({
+      title: '确认导入并替换当前记录？',
+      description: `将用文件里的 ${parsed.records.length} 条记录替换当前的 ${records.length} 条记录。\n\n此操作不可撤销。`,
+      confirmLabel: '确认导入',
+      destructive: records.length > 0,
+      onConfirm: () => {
+        // 落盘失败必须同时进横幅，不能在没落盘的情况下说「已导入成功」。
+        const saved = applyLocal(parsed.records)
+        if (saved.ok) {
+          showToast(`已导入 ${parsed.records.length} 条记录。`)
+        } else {
+          showToast(
+            `已导入 ${parsed.records.length} 条记录，但保存失败，刷新后会丢失。`,
+            'error',
+          )
+        }
+      },
+    })
   }
 
   // 派生数据
@@ -672,6 +807,7 @@ export function App() {
               onUseCloud={handleUseCloud}
               onKeepLocal={handleKeepLocal}
               onExport={handleExport}
+              onExportCsv={handleExportCsv}
               onImport={() => fileRef.current?.click()}
             />
             <ThemeToggle isDark={isDark} onToggle={handleToggleTheme} />
@@ -706,10 +842,20 @@ export function App() {
             month={month}
             records={monthRecords}
             per100kmById={per100kmById}
+            onEdit={setEditingRecord}
             onDelete={handleDelete}
           />
         </main>
       </div>
+
+      <ConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
+      <EditRecordDialog
+        record={editingRecord}
+        records={records}
+        onSave={handleEdit}
+        onClose={() => setEditingRecord(null)}
+      />
+      <Toast toast={toast} onDismiss={dismissToast} />
 
       <input
         ref={fileRef}

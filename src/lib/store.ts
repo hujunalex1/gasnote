@@ -3,6 +3,8 @@ import type { FuelRecord } from './types.ts'
 
 export const STORAGE_KEY = 'gasnote.records.v1'
 export const CORRUPT_KEY = 'gasnote.records.v1.corrupt'
+/** 自动拉取遇到云端被清空时，先把本机数据原样留一份底，防止连锁清空。 */
+export const PRE_WIPE_BACKUP_KEY = 'gasnote.records.v1.prewipe'
 export const SCHEMA_VERSION = 1
 
 /** 只需要这三个方法，所以单测可以塞一个 Map 假存储进来，不必碰真 localStorage。 */
@@ -157,6 +159,55 @@ export function parseImport(jsonString: string): NormalizeResult {
 /** 记录数组 → 存储/导出用的 JSON 文本。 */
 export function serialize(records: FuelRecord[]): string {
   return JSON.stringify({ version: SCHEMA_VERSION, records }, null, 2)
+}
+
+function escapeCsvCell(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replaceAll('"', '""')}"`
+  }
+  return value
+}
+
+/**
+ * 导出给 Excel / Numbers 查看的 CSV（带 UTF-8 BOM 防止 Windows Excel 乱码）。
+ * 数值列不带货币符号和单位，便于表格直接求和/算平均；按日期降序排列。
+ */
+export function serializeCsv(
+  records: readonly FuelRecord[],
+  per100kmById?: ReadonlyMap<string, number>,
+): string {
+  const ordered = records
+    .map((record, index) => ({ record, index }))
+    .sort((a, b) => {
+      if (a.record.date !== b.record.date) return a.record.date < b.record.date ? 1 : -1
+      return b.index - a.index
+    })
+    .map(({ record }) => record)
+
+  const header = '日期,金额(元),升数(L),单价(元/L),总里程(km),是否加满,油耗(L/100km),备注'
+  const lines = ordered.map((r) => {
+    const liters = r.liters !== undefined ? r.liters.toFixed(2) : ''
+    const unitPrice =
+      r.liters !== undefined && r.liters > 0
+        ? (Math.round((r.amount / r.liters) * 100) / 100).toFixed(2)
+        : ''
+    const odometer = r.odometer !== undefined ? String(r.odometer) : ''
+    const full = r.liters !== undefined ? (r.full === false ? '否' : '是') : ''
+    const per100 = per100kmById?.get(r.id)
+    const per100Text = per100 !== undefined ? per100.toFixed(1) : ''
+    return [
+      r.date,
+      r.amount.toFixed(2),
+      liters,
+      unitPrice,
+      odometer,
+      full,
+      per100Text,
+      escapeCsvCell(r.note),
+    ].join(',')
+  })
+
+  return `\uFEFF${[header, ...lines].join('\r\n')}`
 }
 
 /**
