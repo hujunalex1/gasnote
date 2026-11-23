@@ -158,7 +158,6 @@ export function EntryForm({ records, onAdd }: Props) {
             ref={amountRef}
             inputMode="decimal"
             autoComplete="off"
-            placeholder="320.50"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             className="h-10 bg-card font-mono text-xl font-semibold sm:w-[160px]"
