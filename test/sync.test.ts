@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  decideSync, markDirty, markSynced, parseSyncMeta, readSyncMeta, writeSyncMeta,
+  decideSync, markDirty, markSynced, mergeRecords, normalizeEmail,
+  parseSyncMeta, readSyncMeta, writeSyncMeta,
   readLastCopied, writeLastCopied, shouldRemindBackup,
   SYNC_META_KEY, LAST_COPIED_KEY, STALE_DAYS, DAY_MS,
   type SyncMeta,
 } from '../src/lib/sync.ts';
+import type { FuelRecord } from '../src/lib/types.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -42,10 +44,10 @@ test('decideSync：从没同步过、只有云端有数据 → 拉取（新设�
   assert.equal(decideSync({ meta: null, localCount: 0, remoteCount: 5, remoteRevision: 7 }), 'pull');
 });
 
-// 这条是安全底线：本机有旧账、又登录了一个已经有数据的账号，
-// 自动推送会把云端那份整份覆盖掉。必须问用户。
-test('decideSync：从没同步过、两边都有数据 → 冲突，绝不自动选边', () => {
-  assert.equal(decideSync({ meta: null, localCount: 5, remoteCount: 8, remoteRevision: 2 }), 'conflict');
+// 典型场景：手机未登录先记了一笔，再登录已有历史数据的账号。
+// 按 id 无损合并两边记录，既不丢云端历史，也不丢本机新记的账。
+test('decideSync：从没同步过、两边都有数据 → 自动合并（不覆盖也不丢数据）', () => {
+  assert.equal(decideSync({ meta: null, localCount: 5, remoteCount: 8, remoteRevision: 2 }), 'merge');
 });
 
 test('decideSync：本机干净且 revision 一致 → 无事可做', () => {
@@ -89,6 +91,63 @@ test('decideSync：本机删光了且 revision 没变 → 推送空列表', () =
     decideSync({ meta: meta({ remoteRevision: 4, dirty: true }), localCount: 0, remoteCount: 3, remoteRevision: 4 }),
     'push',
   );
+});
+
+// ---- mergeRecords：首次登录与冲突合并的无损逻辑 ----
+
+const rec = (id: string, date = '2026-11-01', amount = 300, note = ''): FuelRecord => ({
+  id, date, amount, note,
+});
+
+test('mergeRecords：未登录新记 1 条 + 云端已有历史 → 保留全部，本机新记录追加在末尾', () => {
+  const remote = [rec('r1', '2026-10-01', 280), rec('r2', '2026-10-15', 310)];
+  const local = [rec('l1', '2026-11-02', 350, '手机新记')];
+  const merged = mergeRecords(local, remote);
+  assert.equal(merged.addedFromLocal, 1);
+  assert.deepEqual(merged.records.map((r) => r.id), ['r1', 'r2', 'l1']);
+});
+
+test('mergeRecords：同 id 去重且保留云端副本，无新增时 addedFromLocal 为 0', () => {
+  const remote = [rec('a', '2026-10-01', 280, '云端版'), rec('b', '2026-10-15', 310)];
+  const local = [rec('a', '2026-10-01', 280, '本机版')];
+  const merged = mergeRecords(local, remote);
+  assert.equal(merged.addedFromLocal, 0);
+  assert.equal(merged.records.length, 2);
+  assert.equal(merged.records[0].note, '云端版');
+});
+
+test('mergeRecords：本机列表自身含重复 id 时也会去重，不污染结果', () => {
+  const remote = [rec('r1')];
+  const local = [rec('l1'), rec('l1'), rec('l2')];
+  const merged = mergeRecords(local, remote);
+  assert.equal(merged.addedFromLocal, 2);
+  assert.deepEqual(merged.records.map((r) => r.id), ['r1', 'l1', 'l2']);
+});
+
+test('mergeRecords：不修改入参数组', () => {
+  const remote = [rec('r1')];
+  const local = [rec('l1')];
+  const merged = mergeRecords(local, remote);
+  assert.equal(remote.length, 1);
+  assert.equal(local.length, 1);
+  assert.equal(merged.records.length, 2);
+});
+
+// ---- normalizeEmail ----
+
+test('normalizeEmail：去空白、转小写，空值返回 null', () => {
+  assert.equal(normalizeEmail('  Alice@Example.COM  '), 'alice@example.com');
+  assert.equal(normalizeEmail(''), null);
+  assert.equal(normalizeEmail('   '), null);
+  assert.equal(normalizeEmail(null), null);
+  assert.equal(normalizeEmail(undefined), null);
+});
+
+test('markSynced / parseSyncMeta：邮箱统一规范为小写，避免误判换账号', () => {
+  const synced = markSynced(null, 'User@Example.com', 2, 100);
+  assert.equal(synced.email, 'user@example.com');
+  const parsed = parseSyncMeta({ email: '  User@Example.COM ', remoteRevision: 2, dirty: false, lastSyncedAt: 100 });
+  assert.equal(parsed?.email, 'user@example.com');
 });
 
 // ---- markDirty / markSynced ----

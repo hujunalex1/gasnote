@@ -1,9 +1,10 @@
-// 云同步的纯逻辑层：只回答「这一轮该推、该拉、还是该让用户选」，
+// 云同步的纯逻辑层：只回答「这一轮该推、该拉、该合并、还是该让用户选」，
 // 以及元信息（revision / dirty）怎么读写。不 import Supabase、不碰网络。
 // 真正的请求在 cloud.ts（薄适配层），那份靠浏览器里的手动验证覆盖。
 //
 // 分工与 store.ts / storage.ts 一致：能单测的都放在这里。
 import type { StorageLike } from './store.ts'
+import type { FuelRecord } from './types.ts'
 
 export const SYNC_META_KEY = 'gasnote.sync.v1'
 
@@ -31,19 +32,32 @@ export type SyncMeta = {
   lastSyncedAt: number | null
 }
 
-export type SyncAction = 'push' | 'pull' | 'nothing' | 'conflict'
+export type SyncAction = 'push' | 'pull' | 'merge' | 'nothing' | 'conflict'
+
+/** 冲突时给界面展示的数量对比，让用户做决定前知道两边各有多少条。 */
+export type ConflictSummary = {
+  localCount: number
+  remoteCount: number
+  mergedCount: number
+}
+
+/** 邮箱规整为小写去空白，避免用户输入大写字母时被误判为换账号。 */
+export function normalizeEmail(email: string | null | undefined): string | null {
+  if (typeof email !== 'string') return null
+  const trimmed = email.trim().toLowerCase()
+  return trimmed === '' ? null : trimmed
+}
 
 /**
- * 决定这一轮怎么同步。四种结果：
+ * 决定这一轮怎么同步。五种结果：
  *
  * - `push`：本机是权威副本，整份推上去。
- * - `pull`：云端是权威副本（别的设备改过，或本机从没同步过），拉下来覆盖本机。
+ * - `pull`：云端是权威副本（别的设备改过，或本机空着首次登录），拉下来覆盖本机。
+ * - `merge`：本机从未与当前账号同步过，且两边都有数据（最典型：未登录时先记了一笔，
+ *   再登录同步）。按 id 无损合并两边记录，既不丢云端历史，也不丢本机新记的账。
  * - `nothing`：两边一致，不用动。
- * - `conflict`：两边都改过。**绝不自动选一边**，交给用户决定——自动选边就是静默丢数据。
- *
- * `meta === null` 表示这台浏览器没有可信的同步记录（从没同步过，或元信息坏了）。
- * 此时本地和云端都有数据是最危险的场景（新设备装了旧账本、又登录了老账号），
- * 必须问用户，而不是拿本地去覆盖云端。
+ * - `conflict`：曾经同步过，之后两边又各自改过。**绝不自动选一边**，交给用户决定
+ *   （支持合并两边，或明确确认后覆盖其中一边）。
  */
 export function decideSync(input: {
   meta: SyncMeta | null
@@ -56,7 +70,7 @@ export function decideSync(input: {
   if (meta === null) {
     if (remoteCount === 0) return localCount > 0 ? 'push' : 'nothing'
     if (localCount === 0) return 'pull'
-    return 'conflict'
+    return 'merge'
   }
 
   if (!meta.dirty) {
@@ -64,6 +78,33 @@ export function decideSync(input: {
   }
 
   return meta.remoteRevision === remoteRevision ? 'push' : 'conflict'
+}
+
+/**
+ * 无损合并本机与云端记录：以云端记录为底，追加云端没有的本机记录（按 id 去重）。
+ *
+ * 本应用里的记录创建后不可编辑（只有新增与删除），同 id 视为同一条记录；
+ * 将本机独有记录追加在末尾，同日展示时新记的账也会排在更前面。
+ * `addedFromLocal` 表示有多少条本机独有记录被并入；为 0 时说明云端已包含全部记录，无需再推送。
+ */
+export function mergeRecords(
+  local: readonly FuelRecord[],
+  remote: readonly FuelRecord[],
+): { records: FuelRecord[]; addedFromLocal: number } {
+  const remoteIds = new Set(remote.map((r) => r.id))
+  const extras: FuelRecord[] = []
+  const seenExtras = new Set<string>()
+
+  for (const record of local) {
+    if (remoteIds.has(record.id) || seenExtras.has(record.id)) continue
+    seenExtras.add(record.id)
+    extras.push(record)
+  }
+
+  return {
+    records: [...remote, ...extras],
+    addedFromLocal: extras.length,
+  }
 }
 
 /** 标记本机有改动，下次同步要推送。 */
@@ -84,7 +125,7 @@ export function markSynced(
   now: number,
 ): SyncMeta {
   return {
-    email: email ?? meta?.email ?? null,
+    email: normalizeEmail(email) ?? normalizeEmail(meta?.email) ?? null,
     remoteRevision,
     dirty: false,
     lastSyncedAt: now,
@@ -107,7 +148,7 @@ export function parseSyncMeta(value: unknown): SyncMeta | null {
 
   if (typeof raw.dirty !== 'boolean') return null
 
-  const email = typeof raw.email === 'string' && raw.email !== '' ? raw.email : null
+  const email = normalizeEmail(typeof raw.email === 'string' ? raw.email : null)
 
   const syncedAt = raw.lastSyncedAt
   if (syncedAt !== null && (typeof syncedAt !== 'number' || !Number.isFinite(syncedAt))) {

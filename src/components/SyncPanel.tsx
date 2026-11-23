@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
+import type { ConflictSummary } from '@/lib/sync.ts'
 
 export type SyncStatus = 'signed-out' | 'syncing' | 'synced' | 'pending' | 'conflict' | 'error'
 
@@ -16,14 +17,18 @@ type Props = {
   lastSyncedAt: number | null
   /** 最近一次同步失败的原因（已经翻成人话） */
   error: string | null
+  /** 冲突时两边的条数对比，用来在用户做决定前展示差距 */
+  conflict: ConflictSummary | null
   onSignIn: (email: string, password: string) => Promise<AuthResult>
   onSignUp: (email: string, password: string) => Promise<AuthResult>
   onSignOut: () => void
   onSyncNow: () => void
-  /** 冲突时二选一：放弃本机改动 */
-  onUseCloud: () => void
-  /** 冲突时二选一：用本机覆盖云端 */
-  onKeepLocal: () => void
+  /** 冲突时推荐选项：按 id 无损合并两边记录 */
+  onMerge: () => void
+  /** 冲突时覆盖本机：放弃本机改动（返回 false 表示用户取消确认） */
+  onUseCloud: () => boolean | void
+  /** 冲突时覆盖云端：用本机替换云端（返回 false 表示用户取消确认） */
+  onKeepLocal: () => boolean | void
   onExport: () => void
   onImport: () => void
 }
@@ -45,7 +50,7 @@ const STATUS_TEXT: Record<SyncStatus, string> = {
   syncing: '正在和云端同步…',
   synced: '本机与云端一致。',
   pending: '有改动还没传上去，2 秒后会自动重试。',
-  conflict: '云端和本机都改过，需要你选一边。',
+  conflict: '云端和本机都改过，请选择合并或保留一边。',
   error: '同步出错，改动仍在本地，修复后会补传。',
 }
 
@@ -55,10 +60,12 @@ export function SyncPanel({
   status,
   lastSyncedAt,
   error,
+  conflict,
   onSignIn,
   onSignUp,
   onSignOut,
   onSyncNow,
+  onMerge,
   onUseCloud,
   onKeepLocal,
   onExport,
@@ -72,10 +79,10 @@ export function SyncPanel({
   const [formError, setFormError] = useState<string | null>(null)
   const [formInfo, setFormInfo] = useState<string | null>(null)
 
-  // 点完操作就收起面板：留着它盖在页面上，用户会怀疑到底生效没有
-  const run = (fn: () => void) => () => {
-    fn()
-    setOpen(false)
+  // 点完操作就收起面板：留着它盖在页面上，用户会怀疑到底生效没有。
+  // 如果回调弹了确认框且用户点了取消（返回 false），保持面板打开。
+  const run = (fn: () => boolean | void) => () => {
+    if (fn() !== false) setOpen(false)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -121,7 +128,7 @@ export function SyncPanel({
         ) : !signedIn ? (
           <>
             <p className={NOTE}>
-              登录后，本机的记录会整份上传到你自己的 Supabase 项目；之后每次改动 2 秒后自动同步。本机 localStorage 仍是主存储，断网也能照常记账。
+              登录后会自动和你的 Supabase 同步：若本机和云端都有记录，首次登录会自动合并保留两边，不会清除历史；之后每次改动 2 秒后自动同步。本机 localStorage 仍是主存储，断网也能照常记账。
             </p>
             <form className="flex flex-col gap-1.5" onSubmit={handleSubmit}>
               <Input
@@ -181,16 +188,38 @@ export function SyncPanel({
             {status === 'conflict' ? (
               <>
                 <p className={NOTE}>
-                  本机记了云端没有的改动，云端也有本机不知道的改动（多半来自另一台设备）。
-                  选一边覆盖，另一边会被替换。
+                  {conflict ? (
+                    <>
+                      本机 <strong>{conflict.localCount}</strong> 条，云端{' '}
+                      <strong>{conflict.remoteCount}</strong> 条。推荐直接合并（保留全部{' '}
+                      <strong>{conflict.mergedCount}</strong> 条）；选择覆盖会丢失另一边独有的记录。
+                    </>
+                  ) : (
+                    '本机和云端都有对方没有的改动（多半来自另一台设备）。推荐合并两边；选择覆盖会替换掉另一边。'
+                  )}
                 </p>
-                <div className="flex gap-1.5">
-                  <Button size="sm" onClick={run(onUseCloud)}>
-                    用云端覆盖本机
+                <div className="flex flex-col gap-1.5">
+                  <Button size="sm" onClick={run(onMerge)}>
+                    {conflict ? `合并两边（保留全部 ${conflict.mergedCount} 条）` : '合并两边记录'}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={run(onKeepLocal)}>
-                    把本机推上去
-                  </Button>
+                  <div className="flex gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={run(onUseCloud)}
+                    >
+                      用云端覆盖本机
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-destructive hover:text-destructive"
+                      onClick={run(onKeepLocal)}
+                    >
+                      用本机覆盖云端
+                    </Button>
+                  </div>
                 </div>
               </>
             ) : (

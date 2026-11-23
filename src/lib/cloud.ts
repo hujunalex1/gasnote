@@ -6,6 +6,7 @@
 // @supabase/supabase-js 用动态 import：没配置 Supabase 的人完全不会下载这 ~100KB。
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizeRecords } from './store.ts'
+import { normalizeEmail } from './sync.ts'
 import type { FuelRecord } from './types.ts'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? ''
@@ -75,7 +76,7 @@ export async function getSignedInEmail(): Promise<string | null> {
   try {
     const { data, error } = await supabase.auth.getSession()
     if (error) return null
-    return data.session?.user.email ?? null
+    return normalizeEmail(data.session?.user.email)
   } catch {
     return null
   }
@@ -91,25 +92,26 @@ export async function onAuthChange(
   const supabase = await getClient()
   if (supabase === null) return () => {}
   const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-    callback(session?.user.email ?? null)
+    callback(normalizeEmail(session?.user.email))
   })
   return () => data.subscription.unsubscribe()
 }
 
-export async function signIn(email: string, password: string): Promise<CloudResult<null>> {
+export async function signIn(email: string, password: string): Promise<CloudResult<string>> {
   const supabase = await getClient()
   if (supabase === null) return fail(NOT_CONFIGURED)
   try {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) return fail(describeCloudError(error))
-    return { ok: true, value: null }
+    const resolved = normalizeEmail(data.user?.email ?? data.session?.user.email ?? email)
+    return { ok: true, value: resolved ?? email.trim().toLowerCase() }
   } catch (error) {
     return fail(describeCloudError(error))
   }
 }
 
 /** 注册结果里需要区分「要先去邮箱点确认」——那时候还没有会话，不能立刻同步。 */
-export type SignUpOutcome = { needsConfirm: boolean }
+export type SignUpOutcome = { needsConfirm: boolean; email: string }
 
 export async function signUp(
   email: string,
@@ -120,8 +122,15 @@ export async function signUp(
   try {
     const { data, error } = await supabase.auth.signUp({ email, password })
     if (error) return fail(describeCloudError(error))
+    const resolved = normalizeEmail(data.user?.email ?? data.session?.user.email ?? email)
     // 项目开了邮箱确认时，signUp 成功但不返回 session，此时还不能同步。
-    return { ok: true, value: { needsConfirm: data.session === null } }
+    return {
+      ok: true,
+      value: {
+        needsConfirm: data.session === null,
+        email: resolved ?? email.trim().toLowerCase(),
+      },
+    }
   } catch (error) {
     return fail(describeCloudError(error))
   }

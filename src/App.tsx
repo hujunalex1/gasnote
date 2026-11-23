@@ -44,11 +44,14 @@ import {
   decideSync,
   markDirty,
   markSynced,
+  mergeRecords,
+  normalizeEmail,
   readLastCopied,
   readSyncMeta,
   shouldRemindBackup,
   writeLastCopied,
   writeSyncMeta,
+  type ConflictSummary,
   type SyncMeta,
 } from '@/lib/sync.ts'
 import {
@@ -98,6 +101,7 @@ export function App() {
   const [syncMeta, setSyncMeta] = useState<SyncMeta | null>(() => readSyncMeta(storage))
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(cloudEnabled ? 'syncing' : 'signed-out')
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [conflictSummary, setConflictSummary] = useState<ConflictSummary | null>(null)
   const [lastCopiedAt, setLastCopiedAt] = useState<number | null>(() => readLastCopied(storage))
 
   /**
@@ -115,10 +119,12 @@ export function App() {
   metaRef.current = syncMeta
   const emailRef = useRef(email)
   emailRef.current = email
+  const syncStatusRef = useRef(syncStatus)
+  syncStatusRef.current = syncStatus
   /** 同一时刻只跑一轮同步，否则两次推送会互相覆盖 revision */
   const syncBusyRef = useRef(false)
-  /** 刚从云端接管了数据，接下来的防抖回调不用再白拉一次 */
-  const skipAutoSyncRef = useRef(false)
+  /** 本地改动后的 2 秒防抖推送定时器，只在真的改了本地数据时才调度 */
+  const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 主题：首屏类名已由 index.html 的内联脚本挂好，这里只同步 React 状态
   useEffect(() => {
@@ -150,19 +156,39 @@ export function App() {
     writeSyncMeta(storage, next)
   }
 
+  function cancelAutoSync(): void {
+    if (autoSyncTimerRef.current !== null) {
+      clearTimeout(autoSyncTimerRef.current)
+      autoSyncTimerRef.current = null
+    }
+  }
+
+  function scheduleAutoSync(): void {
+    if (!cloudEnabled || syncSuspended || emailRef.current === null) return
+    if (syncStatusRef.current === 'conflict') return
+    cancelAutoSync()
+    autoSyncTimerRef.current = setTimeout(() => {
+      autoSyncTimerRef.current = null
+      void runSync()
+    }, 2000)
+  }
+
   function failSync(message: string): void {
     setSyncError(message)
+    syncStatusRef.current = 'error'
     setSyncStatus('error')
   }
 
   /** 云端那份成为权威副本：替换本机数据。 */
   function adoptRemote(who: string, meta: SyncMeta | null, remote: CloudSnapshot): void {
+    recordsRef.current = remote.records
     setRecords(remote.records)
-    skipAutoSyncRef.current = true
     const saved = save(storage, remote.records)
     setSaveError(saved.ok ? null : saved.error)
     updateMeta(markSynced(meta, who, remote.revision, Date.now()))
+    setConflictSummary(null)
     setSyncError(null)
+    syncStatusRef.current = 'synced'
     setSyncStatus('synced')
   }
 
@@ -170,6 +196,7 @@ export function App() {
   async function pushLocal(who: string, meta: SyncMeta | null): Promise<void> {
     if (syncSuspended) {
       // 用户亲手点的要说清楚为什么没传；自动触发的也会走到这里，只是一句提示
+      syncStatusRef.current = 'pending'
       setSyncStatus('pending')
       setSyncError(
         '本地数据没有正常读出，已暂停上传，以免用空列表覆盖云端。请先用「备份」→「导入」从备份恢复。',
@@ -182,7 +209,58 @@ export function App() {
       return
     }
     updateMeta(markSynced(meta, who, pushed.value, Date.now()))
+    setConflictSummary(null)
     setSyncError(null)
+    syncStatusRef.current = 'synced'
+    setSyncStatus('synced')
+  }
+
+  /**
+   * 无损合并本机与云端记录：以云端为底追加本机独有记录。
+   * 先在本地安全落盘并记录云端基线 revision + dirty=true，再推回云端：
+   * 即使推送时断网，两边记录也已经安全保存在本机，联网后会自动补传。
+   */
+  async function mergeAndSync(
+    who: string,
+    meta: SyncMeta | null,
+    remote: CloudSnapshot,
+  ): Promise<void> {
+    const { records: merged, addedFromLocal } = mergeRecords(recordsRef.current, remote.records)
+    if (addedFromLocal === 0) {
+      adoptRemote(who, meta, remote)
+      return
+    }
+
+    recordsRef.current = merged
+    setRecords(merged)
+    persist(merged)
+
+    const pendingMeta: SyncMeta = {
+      email: normalizeEmail(who),
+      remoteRevision: remote.revision,
+      dirty: true,
+      lastSyncedAt: meta?.lastSyncedAt ?? null,
+    }
+    updateMeta(pendingMeta)
+    setConflictSummary(null)
+
+    if (syncSuspended) {
+      syncStatusRef.current = 'pending'
+      setSyncStatus('pending')
+      setSyncError(
+        `已在本机合并两边记录（共 ${merged.length} 条），但因本地存储异常暂不上传。请先导出备份。`,
+      )
+      return
+    }
+
+    const pushed = await pushCloud(merged)
+    if (!pushed.ok) {
+      failSync(`已在本机合并两边记录（共 ${merged.length} 条），但上传云端失败：${pushed.error}`)
+      return
+    }
+    updateMeta(markSynced(pendingMeta, who, pushed.value, Date.now()))
+    setSyncError(null)
+    syncStatusRef.current = 'synced'
     setSyncStatus('synced')
   }
 
@@ -190,24 +268,28 @@ export function App() {
    * 跑一轮同步。
    *
    * 默认先拉一次再决策：只有几百条记录，一次请求换来「云端到底有什么」的确切答案，
-   * 比拿时间戳去猜可靠得多。force 用于冲突时用户手动选边。
+   * 比拿时间戳去猜可靠得多。force 用于冲突时用户手动选择合并或覆盖。
    */
-  async function runSync(force?: 'push' | 'pull'): Promise<void> {
+  async function runSync(force?: 'push' | 'pull' | 'merge'): Promise<void> {
     if (!cloudEnabled) return
-    const who = emailRef.current
+    cancelAutoSync()
+    const who = normalizeEmail(emailRef.current)
     if (who === null) {
+      syncStatusRef.current = 'signed-out'
       setSyncStatus('signed-out')
       return
     }
     if (syncBusyRef.current) return
     syncBusyRef.current = true
+    syncStatusRef.current = 'syncing'
     setSyncStatus('syncing')
     setSyncError(null)
 
     try {
       // 换过账号：旧账号的 revision 绝不能拿来用，否则会把别人的版本号当自己的
       let meta = metaRef.current
-      if (meta !== null && meta.email !== null && meta.email !== who) {
+      const metaEmail = normalizeEmail(meta?.email)
+      if (meta !== null && metaEmail !== null && metaEmail !== who) {
         updateMeta(null)
         meta = null
       }
@@ -229,6 +311,11 @@ export function App() {
         return
       }
 
+      if (force === 'merge') {
+        await mergeAndSync(who, meta, remote)
+        return
+      }
+
       const action = decideSync({
         meta,
         localCount: recordsRef.current.length,
@@ -238,6 +325,8 @@ export function App() {
 
       if (action === 'nothing') {
         updateMeta(markSynced(meta, who, remote.revision, Date.now()))
+        setConflictSummary(null)
+        syncStatusRef.current = 'synced'
         setSyncStatus('synced')
         return
       }
@@ -247,11 +336,25 @@ export function App() {
         return
       }
 
+      if (action === 'merge') {
+        await mergeAndSync(who, meta, remote)
+        return
+      }
+
       if (action === 'conflict') {
-        // 两边都可能带着对方没有的改动，自动选边就是静默丢数据。交给用户点。
-        // 同时把话写进横幅：只改按钮文字的话，用户不看顶栏就永远不知道有这回事。
+        // 两边都可能带着对方没有的改动，自动选边就是静默丢数据。交给用户点（提供合并或覆盖）。
+        // 同时把两边条数写进横幅和面板：让用户做决定前一眼看清差距。
+        const merged = mergeRecords(recordsRef.current, remote.records)
+        setConflictSummary({
+          localCount: recordsRef.current.length,
+          remoteCount: remote.records.length,
+          mergedCount: merged.records.length,
+        })
+        syncStatusRef.current = 'conflict'
         setSyncStatus('conflict')
-        setSyncError('云端和本机都改过，需要你在「备份」面板里选一边。')
+        setSyncError(
+          `云端（${remote.records.length} 条）和本机（${recordsRef.current.length} 条）都改过，请在「备份」面板里选择合并或保留一边。`,
+        )
         return
       }
 
@@ -263,19 +366,22 @@ export function App() {
 
   /** 首次登录/注册成功后接管：建立归属，然后立刻同步一轮。 */
   async function finishAuth(who: string): Promise<void> {
+    const normalized = normalizeEmail(who)
+    if (normalized === null) return
     const previous = metaRef.current
-    if (previous !== null && previous.email !== null && previous.email !== who) {
+    const prevEmail = normalizeEmail(previous?.email)
+    if (previous !== null && prevEmail !== null && prevEmail !== normalized) {
       updateMeta(null)
     }
-    emailRef.current = who
-    setEmail(who)
+    emailRef.current = normalized
+    setEmail(normalized)
     await runSync()
   }
 
   async function handleSignIn(address: string, password: string): Promise<AuthResult> {
     const result = await signIn(address, password)
     if (!result.ok) return result
-    await finishAuth(address)
+    await finishAuth(result.value)
     return { ok: true }
   }
 
@@ -285,24 +391,66 @@ export function App() {
     if (created.value.needsConfirm) {
       return { ok: true, info: '注册成功。请去邮箱点确认链接，确认后回来登录。' }
     }
-    await finishAuth(address)
+    await finishAuth(created.value.email)
     return { ok: true, info: '注册成功，已登录。' }
   }
 
   async function handleSignOut(): Promise<void> {
+    cancelAutoSync()
     await signOut()
     emailRef.current = null
     setEmail(null)
+    setConflictSummary(null)
     setSyncError(null)
+    syncStatusRef.current = 'signed-out'
     setSyncStatus('signed-out')
   }
 
-  /** 本机有了改动：落盘 + 标记待上传。 */
+  /** 冲突时由用户确认后用云端覆盖本机（会丢掉本机独有改动）。返回 false 表示取消。 */
+  function handleUseCloud(): boolean {
+    const localCount = recordsRef.current.length
+    const remoteCount = conflictSummary?.remoteCount
+    const detail =
+      remoteCount !== undefined
+        ? `将用云端的 ${remoteCount} 条记录覆盖本机的 ${localCount} 条记录，本机未同步的改动将丢失。`
+        : `将用云端记录覆盖本机的 ${localCount} 条记录，本机未同步的改动将丢失。`
+    if (localCount > 0 && !window.confirm(`${detail}\n\n此操作不可撤销，确定覆盖本机？`)) {
+      return false
+    }
+    void runSync('pull')
+    return true
+  }
+
+  /** 冲突时由用户确认后用本机覆盖云端（可能清除云端历史记录）。返回 false 表示取消。 */
+  function handleKeepLocal(): boolean {
+    const localCount = recordsRef.current.length
+    const remoteCount = conflictSummary?.remoteCount
+    const dropNote =
+      remoteCount !== undefined && localCount < remoteCount
+        ? `（云端将减少 ${remoteCount - localCount} 条历史记录）`
+        : ''
+    const detail =
+      remoteCount !== undefined
+        ? `将用本机的 ${localCount} 条记录整份替换云端的 ${remoteCount} 条记录${dropNote}。`
+        : `将用本机的 ${localCount} 条记录整份替换云端全部数据。`
+    if (
+      (remoteCount === undefined || remoteCount > 0) &&
+      !window.confirm(`${detail}\n\n此操作不可撤销，确定覆盖云端？`)
+    ) {
+      return false
+    }
+    void runSync('push')
+    return true
+  }
+
+  /** 本机有了改动：落盘 + 标记待上传 + 调度 2 秒防抖同步。 */
   function markLocalChange(): void {
     const meta = metaRef.current
     if (meta !== null) updateMeta(markDirty(meta))
-    if (emailRef.current !== null) {
-      setSyncStatus((previous) => (previous === 'conflict' ? previous : 'pending'))
+    if (emailRef.current !== null && syncStatusRef.current !== 'conflict') {
+      syncStatusRef.current = 'pending'
+      setSyncStatus('pending')
+      scheduleAutoSync()
     }
   }
 
@@ -320,6 +468,7 @@ export function App() {
 
   /** 用户改动：立刻写 localStorage（刷新不丢），云端交给 2 秒后的防抖推送。 */
   function applyLocal(next: FuelRecord[]): { ok: boolean; error: string | null } {
+    recordsRef.current = next
     setRecords(next)
     const saved = persist(next)
     markLocalChange()
@@ -334,6 +483,7 @@ export function App() {
       if (event.key !== STORAGE_KEY) return
       const decoded = decodeStored(event.newValue)
       if (decoded.status !== 'ok' && decoded.status !== 'empty') return
+      recordsRef.current = decoded.records
       setRecords(decoded.records)
       // 另一个标签页刚改过，云端还没有；新一轮推送是幂等的，多推一次无害
       markLocalChange()
@@ -354,6 +504,9 @@ export function App() {
         emailRef.current = nextEmail
         setEmail(nextEmail)
         if (nextEmail === null) {
+          cancelAutoSync()
+          setConflictSummary(null)
+          syncStatusRef.current = 'signed-out'
           setSyncStatus('signed-out')
           setSyncError(null)
         }
@@ -370,6 +523,7 @@ export function App() {
       emailRef.current = current
       setEmail(current)
       if (current === null) {
+        syncStatusRef.current = 'signed-out'
         setSyncStatus('signed-out')
         return
       }
@@ -378,20 +532,10 @@ export function App() {
 
     return () => {
       cancelled = true
+      cancelAutoSync()
       unsubscribe?.()
     }
   }, [cloudEnabled])
-
-  // 改动后 2 秒推一次。挂载时也会跑一次，顺手补齐上次没传上去的改动。
-  useEffect(() => {
-    if (!cloudEnabled || syncSuspended || email === null) return
-    if (skipAutoSyncRef.current) {
-      skipAutoSyncRef.current = false
-      return
-    }
-    const timer = setTimeout(() => void runSync(), 2000)
-    return () => clearTimeout(timer)
-  }, [records, cloudEnabled, email, syncSuspended])
 
   function handleAdd(record: FuelRecord) {
     applyLocal([...records, record])
@@ -519,12 +663,14 @@ export function App() {
               status={syncStatus}
               lastSyncedAt={syncMeta?.lastSyncedAt ?? null}
               error={syncError}
+              conflict={conflictSummary}
               onSignIn={handleSignIn}
               onSignUp={handleSignUp}
               onSignOut={() => void handleSignOut()}
               onSyncNow={() => void runSync()}
-              onUseCloud={() => void runSync('pull')}
-              onKeepLocal={() => void runSync('push')}
+              onMerge={() => void runSync('merge')}
+              onUseCloud={handleUseCloud}
+              onKeepLocal={handleKeepLocal}
               onExport={handleExport}
               onImport={() => fileRef.current?.click()}
             />
