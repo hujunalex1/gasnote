@@ -100,6 +100,45 @@ def main() -> None:
         page.get_by_role("button", name="是").click()
         assert page.get_by_text("还没有记录").is_visible()
 
+        # 10. 手机视口（390×844）布局与边缘防溢校验
+        mobile = browser.new_context(viewport={"width": 390, "height": 844})
+        mp = mobile.new_page()
+        mp.goto(BASE_URL, wait_until="networkidle")
+        mp.fill("#entry-amount", "320")
+        mp.fill("#entry-odometer", "10000")
+        mp.fill("#entry-liters", "40")
+        mp.get_by_role("button", name="记下").click()
+        mp.fill("#entry-amount", "350")
+        mp.fill("#entry-odometer", "10500")
+        mp.fill("#entry-liters", "40")
+        mp.get_by_role("button", name="记下").click()
+
+        # 无横向溢出
+        overflow = mp.evaluate("document.documentElement.scrollWidth - window.innerWidth")
+        assert overflow <= 0, f"手机端出现横向溢出: {overflow}px"
+
+        # 首屏（844px 内）即可看到「本月」概览卡
+        summary_box = mp.locator("h2", has_text="本月").bounding_box()
+        assert summary_box is not None and summary_box["y"] < 600, f"首屏未见本月统计: {summary_box}"
+
+        # 明细里的油耗完整可见，未超出视口
+        econ_box = mp.locator("li").first.get_by_text("8.0 L/100km").bounding_box()
+        assert econ_box is not None and econ_box["x"] + econ_box["width"] <= 390
+
+        # 1 月与 12 月选中金额标签不越出卡片左右边界
+        chart_card = mp.locator("section").filter(has=mp.locator("h2", has_text="每月金额"))
+        chart_box = chart_card.bounding_box()
+        assert chart_box is not None
+        for m in (1, 12):
+            chart_card.locator("button").nth(m - 1).click()
+            label_box = chart_card.locator("button").nth(m - 1).locator("span").first.bounding_box()
+            assert label_box is not None
+            assert label_box["x"] >= chart_box["x"], f"{m}月标签左侧溢出: {label_box} vs {chart_box}"
+            assert (
+                label_box["x"] + label_box["width"] <= chart_box["x"] + chart_box["width"]
+            ), f"{m}月标签右侧溢出: {label_box} vs {chart_box}"
+
+        mobile.close()
         browser.close()
         print("SMOKE_E2E_PASSED")
 

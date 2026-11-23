@@ -134,14 +134,22 @@ export function EditRecordDialog({ record, records, onSave, onClose }: Props) {
                   <Label htmlFor="edit-amount" className="font-mono text-xs text-muted-foreground">
                     金额
                   </Label>
-                  <Input
-                    id="edit-amount"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="h-10 bg-background font-mono text-base font-semibold"
-                  />
+                  <div className="relative">
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 font-mono text-sm text-muted-foreground/70 select-none"
+                    >
+                      ¥
+                    </span>
+                    <Input
+                      id="edit-amount"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="h-10 bg-background pl-7 font-mono text-base font-semibold tabular-nums"
+                    />
+                  </div>
                 </div>
               </div>
 

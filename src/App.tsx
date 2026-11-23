@@ -787,8 +787,8 @@ export function App() {
     .map(({ record }) => record)
 
   return (
-    <div className="min-h-dvh bg-background font-sans text-foreground">
-      <div className="mx-auto w-full max-w-[660px] px-4 pb-16 sm:px-5">
+    <div className="min-h-dvh bg-background pt-[env(safe-area-inset-top)] font-sans text-foreground">
+      <div className="mx-auto w-full max-w-[660px] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:px-5">
         <header className="flex items-center justify-between gap-3 border-b border-border pt-6 pb-4">
           <h1 className="m-0 font-mono text-[15px] font-semibold tracking-[0.02em]">加油记账</h1>
           <div className="flex items-center gap-1.5">

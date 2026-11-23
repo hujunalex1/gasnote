@@ -134,8 +134,10 @@ export function EntryForm({ records, onAdd }: Props) {
         记一笔
       </h2>
 
-      <div className="flex flex-col gap-3.5 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+      {/* 手机端两列紧凑排布（日期+金额 / 总里程+升数 / 备注），减少竖向占屏，
+          让首屏能同时看见本月统计；桌面端展开为两行标准仪表盘排布。 */}
+      <div className="grid grid-cols-2 gap-x-2.5 gap-y-3 sm:flex sm:flex-row sm:items-end sm:gap-3.5">
+        <div className="flex min-w-0 flex-col gap-1.5 sm:w-auto sm:shrink-0">
           <Label htmlFor="entry-date" className="font-mono text-xs text-muted-foreground">
             日期
           </Label>
@@ -149,23 +151,31 @@ export function EntryForm({ records, onAdd }: Props) {
           />
         </div>
 
-        <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+        <div className="flex min-w-0 flex-col gap-1.5 sm:w-[160px] sm:shrink-0">
           <Label htmlFor="entry-amount" className="font-mono text-xs text-muted-foreground">
             金额
           </Label>
-          <Input
-            id="entry-amount"
-            ref={amountRef}
-            inputMode="decimal"
-            autoComplete="off"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="h-10 bg-card font-mono text-xl font-semibold sm:w-[160px]"
-            aria-invalid={error !== ''}
-          />
+          <div className="relative">
+            <span
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 font-mono text-sm text-muted-foreground/70 select-none"
+            >
+              ¥
+            </span>
+            <Input
+              id="entry-amount"
+              ref={amountRef}
+              inputMode="decimal"
+              autoComplete="off"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="h-10 bg-card pl-7 font-mono text-xl font-semibold tabular-nums"
+              aria-invalid={error !== ''}
+            />
+          </div>
         </div>
 
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="col-span-2 flex min-w-0 flex-col gap-1.5 sm:flex-1">
           <Label htmlFor="entry-note" className="font-mono text-xs text-muted-foreground">
             备注
           </Label>
@@ -181,8 +191,8 @@ export function EntryForm({ records, onAdd }: Props) {
         </div>
       </div>
 
-      <div className="mt-3.5 flex flex-col gap-3.5 sm:flex-row sm:flex-wrap sm:items-end">
-        <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+      <div className="mt-3 grid grid-cols-2 gap-x-2.5 gap-y-3 sm:mt-3.5 sm:flex sm:flex-row sm:items-end sm:gap-3.5">
+        <div className="flex min-w-0 flex-col gap-1.5 sm:w-[140px] sm:shrink-0">
           <Label htmlFor="entry-odometer" className="font-mono text-xs text-muted-foreground">
             总里程 km
           </Label>
@@ -197,11 +207,11 @@ export function EntryForm({ records, onAdd }: Props) {
             }
             value={odometer}
             onChange={(e) => setOdometer(e.target.value)}
-            className="h-10 bg-card font-mono sm:w-[140px]"
+            className="h-10 bg-card font-mono tabular-nums"
           />
         </div>
 
-        <div className="flex w-full flex-col gap-1.5 sm:w-auto">
+        <div className="flex min-w-0 flex-col gap-1.5 sm:w-[120px] sm:shrink-0">
           <Label htmlFor="entry-liters" className="font-mono text-xs text-muted-foreground">
             升数 L
           </Label>
@@ -212,29 +222,31 @@ export function EntryForm({ records, onAdd }: Props) {
             placeholder="选填"
             value={liters}
             onChange={(e) => setLiters(e.target.value)}
-            className="h-10 bg-card font-mono sm:w-[120px]"
+            className="h-10 bg-card font-mono tabular-nums"
           />
         </div>
 
-        <label className="flex h-10 cursor-pointer items-center gap-2 font-mono text-[13px] text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={full}
-            onChange={(e) => setFull(e.target.checked)}
-            className="size-4 accent-primary"
-          />
-          加满
-        </label>
+        <div className="col-span-2 flex items-center justify-between gap-3 sm:flex-1">
+          <label className="flex h-10 cursor-pointer items-center gap-2 font-mono text-[13px] text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={full}
+              onChange={(e) => setFull(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            加满
+          </label>
+          <Button type="submit" className="h-9 rounded-none px-6 font-mono font-semibold">
+            记下
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-3.5 flex items-center justify-between gap-3">
-        <p role="alert" className="m-0 text-[13.5px] text-destructive">
+      {error ? (
+        <p role="alert" className="mt-2.5 mb-0 text-[13.5px] text-destructive">
           {error}
         </p>
-        <Button type="submit" className="h-9 rounded-none px-6 font-mono font-semibold">
-          记下
-        </Button>
-      </div>
+      ) : null}
     </form>
   )
 }

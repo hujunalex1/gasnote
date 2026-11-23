@@ -39,79 +39,101 @@ export function RecordList({ year, month, records, per100kmById, onEdit, onDelet
             const per100km = per100kmById.get(record.id)
             const unitPrice =
               record.liters !== undefined ? formatUnitPrice(record.amount, record.liters) : ''
-            const details = [
+            const baseDetails = [
               record.odometer !== undefined ? formatKm(record.odometer) : null,
               record.liters !== undefined
                 ? `${formatLiters(record.liters)}${record.full === false ? '（未加满）' : ''}`
                 : null,
               unitPrice || null,
-              per100km !== undefined ? `${formatPer100km(per100km)} L/100km` : null,
-            ].filter((part) => part !== null)
+            ].filter((part): part is string => part !== null)
+            const hasDetails = baseDetails.length > 0 || per100km !== undefined
+
             return (
               <li
                 key={record.id}
-                className="flex items-center gap-3 border-t border-border py-2 first:border-t-0 first:pt-0.5"
+                className="border-t border-border py-2.5 first:border-t-0 first:pt-1"
               >
-                <span className="w-12 shrink-0 font-mono text-[12px] text-muted-foreground">
-                  {record.date.slice(5)}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-3">
-                    <span className="font-mono font-semibold">{formatMoney(record.amount)}</span>
-                    {record.note ? (
-                      <span className="min-w-0 truncate text-[13px] text-muted-foreground">
-                        {record.note}
+                <div className="flex items-center gap-2.5">
+                  <span className="w-11 shrink-0 font-mono text-[12px] text-muted-foreground tabular-nums">
+                    {record.date.slice(5)}
+                  </span>
+                  <span className="shrink-0 font-mono font-semibold tabular-nums">
+                    {formatMoney(record.amount)}
+                  </span>
+                  {record.note ? (
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                      {record.note}
+                    </span>
+                  ) : (
+                    <span className="flex-1" />
+                  )}
+
+                  <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                    {confirming ? (
+                      <>
+                        <span className="mr-1 font-mono text-[12px] text-destructive">
+                          确认删除？
+                        </span>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => {
+                            onDelete(record.id)
+                            setConfirmingId(null)
+                          }}
+                        >
+                          是
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setConfirmingId(null)}>
+                          否
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="px-2 text-muted-foreground hover:text-foreground"
+                          onClick={() => onEdit(record)}
+                        >
+                          编辑
+                        </Button>
+                        {/* 删除是低频操作：平时只是一行灰字，不和金额抢视线；悬停才变红。
+                            真正的防误触在下一步的「确认删除？」，那一步仍是醒目的红色。 */}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="px-2 text-muted-foreground hover:text-destructive"
+                          onClick={() => setConfirmingId(record.id)}
+                        >
+                          删除
+                        </Button>
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                {/* 详情独占第二行，不再被右侧操作按钮挤占；手机端允许自然换行，油耗数字绝不被截断 */}
+                {hasDetails ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[54px] font-mono text-[12px] text-muted-foreground tabular-nums">
+                    {baseDetails.map((item, idx) => (
+                      <span key={item}>
+                        {idx > 0 ? <span className="mr-2 opacity-60">·</span> : null}
+                        {item}
+                      </span>
+                    ))}
+                    {per100km !== undefined ? (
+                      <span className="font-medium text-foreground">
+                        {baseDetails.length > 0 ? (
+                          <span className="mr-2 font-normal text-muted-foreground opacity-60">
+                            ·
+                          </span>
+                        ) : null}
+                        {formatPer100km(per100km)} L/100km
                       </span>
                     ) : null}
-                  </span>
-                  {details.length > 0 ? (
-                    <span className="block truncate font-mono text-[12px] text-muted-foreground">
-                      {details.join(' · ')}
-                    </span>
-                  ) : null}
-                </span>
-
-                <span className="ml-auto flex shrink-0 items-center gap-1">
-                  {confirming ? (
-                    <>
-                      <span className="font-mono text-[12px] text-destructive">确认删除？</span>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => {
-                          onDelete(record.id)
-                          setConfirmingId(null)
-                        }}
-                      >
-                        是
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => setConfirmingId(null)}>
-                        否
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="px-2 text-muted-foreground hover:text-foreground"
-                        onClick={() => onEdit(record)}
-                      >
-                        编辑
-                      </Button>
-                      {/* 删除是低频操作：平时只是一行灰字，不和金额抢视线；悬停才变红。
-                          真正的防误触在下一步的「确认删除？」，那一步仍是醒目的红色。 */}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="px-2 text-muted-foreground hover:text-destructive"
-                        onClick={() => setConfirmingId(record.id)}
-                      >
-                        删除
-                      </Button>
-                    </>
-                  )}
-                </span>
+                  </div>
+                ) : null}
               </li>
             )
           })}

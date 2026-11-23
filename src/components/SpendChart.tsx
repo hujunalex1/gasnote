@@ -109,7 +109,15 @@ export function SpendChart({
                   （实测间隙 1px 而不是 3px）。下限写在这里，两边才对得上。 */}
               {selected ? (
                 <span
-                  className="absolute left-1/2 -translate-x-1/2 bg-card px-1 font-mono text-[11px] leading-4 font-semibold whitespace-nowrap text-foreground"
+                  className={cn(
+                    'absolute bg-card px-1 font-mono text-[11px] leading-4 font-semibold whitespace-nowrap text-foreground tabular-nums',
+                    // 1 月贴左、12 月贴右，防止窄屏下金额标签居中探出卡片边框
+                    m.month === 1
+                      ? 'left-0'
+                      : m.month === 12
+                        ? 'right-0'
+                        : 'left-1/2 -translate-x-1/2',
+                  )}
                   style={{ bottom: `calc(max(${heights[i] * 100}%, 2px) + 3px)` }}
                 >
                   {formatMoney(m.total)}
@@ -118,7 +126,7 @@ export function SpendChart({
               <span
                 // 悬停时把月份点亮：短柱/零高柱也能看出反馈，顺带提示正指着哪个月
                 className={cn(
-                  'absolute inset-x-0 -bottom-5 text-center font-mono text-[11px] leading-5 transition-opacity group-hover:opacity-100',
+                  'absolute inset-x-0 -bottom-5 text-center font-mono text-[11px] leading-5 tabular-nums transition-opacity group-hover:opacity-100',
                   showLabel ? 'opacity-100' : 'opacity-0',
                   selected
                     ? 'font-semibold text-foreground'

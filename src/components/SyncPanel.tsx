@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { cn } from 'cn'
 import { Button } from '@/components/ui/button.tsx'
 import { Input } from '@/components/ui/input.tsx'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover.tsx'
@@ -109,12 +110,38 @@ export function SyncPanel({
   const needsAttention = status === 'error' || status === 'conflict'
   const signedIn = email !== null
 
+  const triggerLabel = !configured
+    ? '备份'
+    : status === 'conflict'
+      ? '同步冲突 !'
+      : status === 'error'
+        ? '同步异常 !'
+        : status === 'syncing'
+          ? '同步中…'
+          : status === 'pending'
+            ? '待同步'
+            : signedIn
+              ? '已同步'
+              : '未登录'
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={<Button variant="outline" size="sm" aria-label="云端同步与导入导出" />}
+        render={
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="云端同步与导入导出"
+            className={cn(
+              'font-mono text-xs',
+              needsAttention &&
+                'border-destructive/60 text-destructive hover:bg-destructive/10 hover:text-destructive',
+              configured && !signedIn && !needsAttention && 'text-muted-foreground',
+            )}
+          />
+        }
       >
-        {needsAttention ? '备份 !' : '备份'}
+        {triggerLabel}
       </PopoverTrigger>
 
       {/* 描边与去阴影由 ui/popover.tsx 的默认值提供，这里只限定宽度 */}

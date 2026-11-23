@@ -29,29 +29,31 @@ export function EconomyPanel({ latest, yearSummary, year, isCurrentYear }: Props
   const latestPer100km = segmentPer100km(latest)
 
   return (
-    <section className="grid grid-cols-1 gap-3 sm:grid-cols-[1.4fr_1fr]">
-      <div className="flex flex-col justify-center border border-border bg-card px-4 py-3.5">
+    <section className="grid grid-cols-2 gap-2.5 sm:grid-cols-[1.4fr_1fr] sm:gap-3">
+      <div className="flex min-w-0 flex-col justify-center border border-border bg-card px-3.5 py-3 sm:px-4 sm:py-3.5">
         <h2 className={LABEL}>最近油耗</h2>
-        <p className="mt-2.5 mb-0 font-mono text-[28px] leading-none font-semibold tracking-[-0.02em]">
+        <p className="mt-2 mb-0 font-mono text-[22px] leading-none font-semibold tracking-[-0.02em] tabular-nums sm:mt-2.5 sm:text-[28px]">
           {formatPer100km(latestPer100km)}
           <span className={UNIT}>L/100km</span>
         </p>
-        <p className="mt-2.5 mb-0 font-mono text-[12px] text-muted-foreground">
+        <p className="mt-2 mb-0 font-mono text-[12px] leading-snug text-muted-foreground tabular-nums sm:mt-2.5">
           {formatKm(latest.distance)} · {formatLiters(latest.liters)} · 截至 {latest.endDate.slice(5)}
         </p>
       </div>
 
-      <div className="flex flex-col justify-center border border-border bg-muted/40 px-4 py-3.5">
+      <div className="flex min-w-0 flex-col justify-center border border-border bg-muted/40 px-3.5 py-3 sm:px-4 sm:py-3.5">
         <h2 className={LABEL}>{isCurrentYear ? '本年' : `${year} 年`}平均</h2>
         {yearSummary.per100km === null || yearSummary.costPerKm === null ? (
-          <p className="mt-2.5 mb-0 font-mono text-[13px] text-muted-foreground">这一年还没有完整区间</p>
+          <p className="mt-2 mb-0 font-mono text-[12px] leading-snug text-muted-foreground sm:mt-2.5 sm:text-[13px]">
+            这一年还没有完整区间
+          </p>
         ) : (
           <>
-            <p className="mt-2.5 mb-0 font-mono text-2xl leading-none font-semibold tracking-[-0.02em] text-foreground/90">
+            <p className="mt-2 mb-0 font-mono text-[20px] leading-none font-semibold tracking-[-0.02em] text-foreground/90 tabular-nums sm:mt-2.5 sm:text-2xl">
               {formatPer100km(yearSummary.per100km)}
               <span className={UNIT}>L/100km</span>
             </p>
-            <p className="mt-2.5 mb-0 font-mono text-[12px] text-muted-foreground">
+            <p className="mt-2 mb-0 font-mono text-[12px] leading-snug text-muted-foreground tabular-nums sm:mt-2.5">
               {formatKm(yearSummary.distance)} · 每公里 {formatMoney(yearSummary.costPerKm)}
             </p>
           </>
